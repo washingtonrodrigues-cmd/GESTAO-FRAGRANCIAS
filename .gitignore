@@ -1,0 +1,17 @@
+node_modules/
+package-lock.json
+
+# capturas geradas pelos testes
+shot-*.png
+doc-*.png
+teste-resultado.txt
+
+# nada de credencial ou configuração local
+.env
+.env.*
+.supabase/
+*.local
+
+# lixo de sistema operacional
+.DS_Store
+Thumbs.db

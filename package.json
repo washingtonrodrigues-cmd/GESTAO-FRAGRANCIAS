@@ -1,0 +1,13 @@
+{
+  "name": "gestao-fragrancias",
+  "version": "1.0.0",
+  "description": "ESSENZA AURA — gestão de compras, estoque, consignação e financeiro",
+  "private": true,
+  "scripts": {
+    "build": "./scripts/build.sh",
+    "test": "node teste-ui.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}

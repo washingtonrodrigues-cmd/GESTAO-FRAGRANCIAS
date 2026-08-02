@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Monta GESTAO-FRAGRANCIAS.html a partir das partes em app/.
+#
+# O sistema é um arquivo HTML único, de propósito: abre com duplo clique,
+# sem servidor, sem instalação, sem passo de build para quem usa. Mas 500 KB
+# num arquivo só é impossível de manter, então o código-fonte fica dividido
+# em oito partes e este script apenas concatena, na ordem.
+#
+#   ./scripts/build.sh
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+PARTES=(app/part1.html app/part2.js app/part3.js app/part4.js
+        app/part5.js app/part6.js app/part7.js app/part8.js)
+
+for f in "${PARTES[@]}"; do
+  [ -f "$f" ] || { echo "✗ arquivo ausente: $f" >&2; exit 1; }
+done
+
+cat "${PARTES[@]}" > GESTAO-FRAGRANCIAS.html
+echo "✓ GESTAO-FRAGRANCIAS.html gerado ($(wc -c < GESTAO-FRAGRANCIAS.html) bytes)"
+
+# Conferência de sintaxe: o navegador só reclamaria depois de abrir.
+if command -v node >/dev/null 2>&1; then
+  node -e '
+    const fs = require("fs");
+    const s = fs.readFileSync("GESTAO-FRAGRANCIAS.html", "utf8");
+    const i = s.indexOf("<script>\n/* ═"), j = s.lastIndexOf("</script>");
+    try { new Function(s.slice(i + 8, j)); console.log("✓ sintaxe do JavaScript conferida"); }
+    catch (e) { console.error("✗ erro de sintaxe: " + e.message); process.exit(1); }
+  '
+fi
+
+# Nenhuma credencial pode entrar no arquivo publicado.
+if grep -qiE "service_role|sb_secret_|encrypted_password" GESTAO-FRAGRANCIAS.html; then
+  echo "✗ credencial encontrada no arquivo gerado — corrija antes de publicar" >&2
+  exit 1
+fi
+echo "✓ nenhuma credencial no arquivo gerado"

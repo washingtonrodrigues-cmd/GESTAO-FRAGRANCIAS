@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa do Sistema · Gestão de Fragrâncias</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0e1116;
+  --ink-2:#161b23;
+  --ink-3:#1e252f;
+  --line:#2b3440;
+  --line-2:#3b4756;
+  --paper:#f2ece1;
+  --paper-dim:#c9c2b6;
+  --mute:#8b95a3;
+  --amber:#e0a340;
+  --amber-dim:#8a6526;
+  --jade:#4fbf9a;
+  --rose:#e0687a;
+  --azure:#6aa9e0;
+  --violet:#a98ede;
+  --serif:'Fraunces',Georgia,serif;
+  --sans:'IBM Plex Sans',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink);
+  color:var(--paper);
+  font-family:var(--sans);
+  font-weight:300;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  background-image:
+    linear-gradient(rgba(43,52,64,.35) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(43,52,64,.35) 1px,transparent 1px);
+  background-size:64px 64px;
+  background-attachment:fixed;
+}
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(224,163,64,.10),transparent 70%);
+}
+.wrap{position:relative;z-index:1;max-width:1240px;margin:0 auto;padding:0 24px 100px}
+
+/* ─── HEADER ─── */
+header{padding:72px 0 40px;border-bottom:1px solid var(--line)}
+.eyebrow{
+  font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--amber);display:flex;align-items:center;gap:14px;margin-bottom:22px;
+}
+.eyebrow::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--amber-dim),transparent)}
+h1{
+  font-family:var(--serif);font-weight:300;font-size:clamp(38px,6.5vw,76px);
+  line-height:1.02;letter-spacing:-.025em;
+}
+h1 em{font-style:italic;color:var(--amber)}
+.lede{margin-top:22px;max-width:660px;color:var(--paper-dim);font-size:16.5px}
+.meta{
+  margin-top:32px;display:flex;flex-wrap:wrap;gap:8px 28px;
+  font-family:var(--mono);font-size:11.5px;color:var(--mute);
+}
+.meta b{color:var(--paper);font-weight:500}
+
+/* ─── NAV ─── */
+nav{
+  position:sticky;top:0;z-index:50;display:flex;gap:2px;overflow-x:auto;
+  background:rgba(14,17,22,.92);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line);margin:0 -24px;padding:0 24px;
+  scrollbar-width:none;
+}
+nav::-webkit-scrollbar{display:none}
+nav button{
+  background:none;border:none;border-bottom:2px solid transparent;
+  color:var(--mute);font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;
+  text-transform:uppercase;padding:18px 16px;cursor:pointer;white-space:nowrap;
+  transition:color .18s,border-color .18s;
+}
+nav button:hover{color:var(--paper)}
+nav button[aria-selected="true"]{color:var(--amber);border-bottom-color:var(--amber)}
+
+/* ─── PANELS ─── */
+.panel{display:none;padding-top:56px;animation:rise .45s cubic-bezier(.2,.7,.3,1)}
+.panel.on{display:block}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+h2{
+  font-family:var(--serif);font-weight:300;font-size:clamp(26px,3.4vw,38px);
+  letter-spacing:-.015em;margin-bottom:10px;
+}
+h2 .n{font-family:var(--mono);font-size:12px;color:var(--amber);
+  vertical-align:super;margin-right:10px;letter-spacing:.1em}
+.sub{color:var(--mute);font-size:14.5px;max-width:720px;margin-bottom:38px}
+h3{
+  font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--amber);margin:48px 0 18px;padding-bottom:9px;border-bottom:1px solid var(--line);
+}
+h3:first-of-type{margin-top:0}
+
+/* ─── CARDS ─── */
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.card{
+  background:linear-gradient(160deg,var(--ink-2),var(--ink));
+  border:1px solid var(--line);border-radius:3px;padding:20px 22px;
+  transition:border-color .2s,transform .2s;
+}
+.card:hover{border-color:var(--line-2);transform:translateY(-2px)}
+.card .tag{
+  font-family:var(--mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--mute);display:block;margin-bottom:8px;
+}
+.card h4{font-family:var(--serif);font-weight:500;font-size:19px;letter-spacing:-.01em;margin-bottom:8px}
+.card p{font-size:13.5px;color:var(--paper-dim);line-height:1.55}
+.card ul{margin-top:10px;padding-left:0;list-style:none}
+.card li{font-size:12.5px;color:var(--mute);padding:3px 0 3px 14px;position:relative}
+.card li::before{content:'';position:absolute;left:0;top:12px;width:5px;height:1px;background:var(--amber-dim)}
+
+/* accent bars */
+.acc{border-left:2px solid var(--line-2)}
+.acc-amber{border-left-color:var(--amber)}
+.acc-jade{border-left-color:var(--jade)}
+.acc-rose{border-left-color:var(--rose)}
+.acc-azure{border-left-color:var(--azure)}
+.acc-violet{border-left-color:var(--violet)}
+
+/* ─── TABLE ─── */
+table{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0 8px}
+th{
+  font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--mute);text-align:left;padding:10px 12px;border-bottom:1px solid var(--line-2);font-weight:500;
+}
+td{padding:11px 12px;border-bottom:1px solid var(--line);color:var(--paper-dim);vertical-align:top}
+tr:hover td{background:rgba(224,163,64,.03);color:var(--paper)}
+td b{color:var(--paper);font-weight:500}
+.mono{font-family:var(--mono);font-size:12px}
+.yes{color:var(--jade)}.no{color:var(--rose)}.warn{color:var(--amber)}
+
+/* ─── FLOW ─── */
+.flow{display:flex;flex-direction:column;gap:0;margin:8px 0}
+.step{display:flex;gap:20px;position:relative;padding-bottom:26px}
+.step:last-child{padding-bottom:0}
+.step::before{
+  content:'';position:absolute;left:17px;top:38px;bottom:0;width:1px;
+  background:linear-gradient(180deg,var(--line-2),var(--line));
+}
+.step:last-child::before{display:none}
+.dot{
+  flex:0 0 36px;height:36px;border-radius:50%;border:1px solid var(--line-2);
+  background:var(--ink-2);display:grid;place-items:center;
+  font-family:var(--mono);font-size:12px;color:var(--amber);position:relative;z-index:1;
+}
+.step .body{padding-top:5px}
+.step h5{font-family:var(--serif);font-weight:500;font-size:17px;margin-bottom:5px}
+.step p{font-size:13.5px;color:var(--paper-dim)}
+.step .out{
+  font-family:var(--mono);font-size:11.5px;color:var(--jade);margin-top:8px;
+  padding-left:12px;border-left:1px solid rgba(79,191,154,.35);
+}
+
+/* ─── PIPELINE (macro flow) ─── */
+.pipe{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin:6px 0}
+.node{
+  border:1px solid var(--line);border-radius:3px;padding:14px 15px;background:var(--ink-2);
+  position:relative;
+}
+.node .k{font-family:var(--mono);font-size:10px;color:var(--amber);letter-spacing:.14em;display:block;margin-bottom:6px}
+.node .t{font-family:var(--serif);font-size:16px;font-weight:500;margin-bottom:5px}
+.node .d{font-size:12px;color:var(--mute);line-height:1.45}
+
+/* ─── BUCKETS ─── */
+.buckets{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:8px 0}
+.bucket{border:1px solid var(--line);border-top:2px solid;border-radius:3px;padding:16px;background:var(--ink-2)}
+.bucket .bn{font-family:var(--mono);font-size:11px;letter-spacing:.14em;margin-bottom:8px}
+.bucket .bd{font-size:12.5px;color:var(--mute);line-height:1.5}
+
+/* ─── SEARCH ─── */
+.search{
+  width:100%;background:var(--ink-2);border:1px solid var(--line);border-radius:3px;
+  padding:13px 16px;color:var(--paper);font-family:var(--mono);font-size:13px;margin-bottom:20px;
+}
+.search:focus{outline:none;border-color:var(--amber)}
+.search::placeholder{color:var(--mute)}
+
+/* ─── RULES ─── */
+.rule{
+  display:grid;grid-template-columns:78px 1fr;gap:16px;padding:13px 0;
+  border-bottom:1px solid var(--line);
+}
+.rule .id{font-family:var(--mono);font-size:11.5px;color:var(--amber);padding-top:2px}
+.rule .tx{font-size:13.5px;color:var(--paper-dim)}
+
+/* ─── TIMELINE ─── */
+.tl{display:grid;gap:0}
+.ph{
+  display:grid;grid-template-columns:64px 1fr 92px;gap:18px;align-items:start;
+  padding:18px 0;border-bottom:1px solid var(--line);
+}
+.ph .num{font-family:var(--serif);font-size:30px;color:var(--line-2);line-height:1;font-weight:300}
+.ph.done .num{color:var(--amber)}
+.ph h5{font-family:var(--serif);font-size:18px;font-weight:500;margin-bottom:5px}
+.ph p{font-size:13px;color:var(--mute)}
+.ph .dur{font-family:var(--mono);font-size:11px;color:var(--paper-dim);text-align:right;padding-top:6px}
+
+/* ─── CALLOUT ─── */
+.callout{
+  border:1px solid var(--amber-dim);border-left:2px solid var(--amber);border-radius:3px;
+  background:linear-gradient(100deg,rgba(224,163,64,.07),transparent 60%);
+  padding:20px 24px;margin:26px 0;
+}
+.callout .ct{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);margin-bottom:9px}
+.callout p{font-size:14px;color:var(--paper)}
+
+/* ─── FORMULA ─── */
+.fx{
+  font-family:var(--mono);font-size:12.5px;background:var(--ink-2);border:1px solid var(--line);
+  border-radius:3px;padding:18px 20px;color:var(--paper-dim);white-space:pre;overflow-x:auto;margin:10px 0;line-height:1.85;
+}
+.fx b{color:var(--amber);font-weight:500}
+.fx i{color:var(--jade);font-style:normal}
+
+/* ─── SCREENS ─── */
+.scr{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:9px}
+.sc{
+  border:1px solid var(--line);border-radius:3px;padding:11px 13px;background:var(--ink-2);
+  display:flex;gap:11px;align-items:baseline;transition:border-color .18s;
+}
+.sc:hover{border-color:var(--amber-dim)}
+.sc .i{font-family:var(--mono);font-size:10px;color:var(--mute)}
+.sc .n{font-size:13px;color:var(--paper)}
+.sc .p{font-family:var(--mono);font-size:10.5px;color:var(--mute);display:block;margin-top:2px}
+
+footer{margin-top:80px;padding-top:28px;border-top:1px solid var(--line);
+  font-family:var(--mono);font-size:11px;color:var(--mute);display:flex;
+  justify-content:space-between;flex-wrap:wrap;gap:10px}
+
+@media(max-width:640px){
+  header{padding:44px 0 30px}
+  .wrap{padding:0 16px 70px}
+  nav{margin:0 -16px;padding:0 16px}
+  .rule{grid-template-columns:64px 1fr;gap:10px}
+  .ph{grid-template-columns:44px 1fr;gap:12px}
+  .ph .dur{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Documentação de Arquitetura · v1.0 · 01.08.2026</div>
+  <h1>Sistema de Gestão de<br><em>Fragrâncias</em></h1>
+  <p class="lede">Mapa visual do ERP de compras, estoque, vendas, consignação e financeiro.
+  Referência rápida dos quatro documentos técnicos — arquitetura, banco de dados, módulos e auditoria.</p>
+  <div class="meta">
+    <span><b>25</b> tabelas</span>
+    <span><b>38</b> telas</span>
+    <span><b>12</b> módulos</span>
+    <span><b>52</b> regras de negócio</span>
+    <span><b>25</b> invariantes</span>
+    <span><b>20</b> relatórios</span>
+    <span><b>10</b> etapas · ~8 semanas</span>
+  </div>
+</header>
+
+<nav role="tablist">
+  <button role="tab" aria-selected="true" data-p="visao">Visão geral</button>
+  <button role="tab" aria-selected="false" data-p="fluxo">Fluxo dos módulos</button>
+  <button role="tab" aria-selected="false" data-p="banco">Banco de dados</button>
+  <button role="tab" aria-selected="false" data-p="telas">Telas</button>
+  <button role="tab" aria-selected="false" data-p="ops">Fluxos operacionais</button>
+  <button role="tab" aria-selected="false" data-p="calc">Cálculos</button>
+  <button role="tab" aria-selected="false" data-p="regras">Regras</button>
+  <button role="tab" aria-selected="false" data-p="plano">Plano</button>
+</nav>
+
+<!-- ══════════ VISÃO GERAL ══════════ -->
+<section class="panel on" id="visao">
+  <h2><span class="n">01</span>O que define este sistema</h2>
+  <p class="sub">Três operações movimentam produto e dinheiro de formas diferentes. Distingui-las corretamente
+  é o que separa um ERP confiável de um que infla a receita.</p>
+
+  <table>
+    <thead><tr><th></th><th>Operação</th><th>Sai do estoque?</th><th>Vira dívida?</th><th>Muda de dono?</th></tr></thead>
+    <tbody>
+      <tr><td class="mono warn">A</td><td><b>Venda a consumidor final</b></td><td class="yes">Sim</td><td class="yes">Sim — à vista ou até 4x</td><td class="yes">Sim</td></tr>
+      <tr><td class="mono warn">B</td><td><b>Venda a revendedor</b> (revenda firme)</td><td class="yes">Sim</td><td class="yes">Sim — à vista ou até 4x</td><td class="yes">Sim</td></tr>
+      <tr><td class="mono warn">C</td><td><b>Consignação / Mostruário</b></td><td>Muda de bolso</td><td class="no">Não — só na prestação de contas</td><td class="no">Não</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <div class="ct">Regra de ouro</div>
+    <p>Consignação <b>não é venda</b> e <b>não gera receita</b>. Ela transfere o produto de um bolso de estoque
+    para outro. A receita nasce na <b>prestação de contas</b>, quando o revendedor informa o que vendeu,
+    o que devolve e o que ficou com ele.</p>
+  </div>
+
+  <h3>Os quatro bolsos de estoque</h3>
+  <div class="buckets">
+    <div class="bucket" style="border-top-color:var(--jade)">
+      <div class="bn" style="color:var(--jade)">DISPONÍVEL</div>
+      <div class="bd">Na sua mão, pronto para vender. Único bolso de onde sai uma venda direta.</div>
+    </div>
+    <div class="bucket" style="border-top-color:var(--azure)">
+      <div class="bn" style="color:var(--azure)">RESERVADO</div>
+      <div class="bd">Separado para uma venda ainda não finalizada. Volta sozinho se a venda cair.</div>
+    </div>
+    <div class="bucket" style="border-top-color:var(--amber)">
+      <div class="bn" style="color:var(--amber)">MOSTRUÁRIO</div>
+      <div class="bd">Amostra com o revendedor para demonstração. Ainda é patrimônio da empresa.</div>
+    </div>
+    <div class="bucket" style="border-top-color:var(--violet)">
+      <div class="bn" style="color:var(--violet)">CONSIGNADO</div>
+      <div class="bd">Em poder do revendedor para vender. Vira receita só no acerto.</div>
+    </div>
+  </div>
+
+  <h3>Sete decisões estruturais</h3>
+  <div class="grid g2">
+    <div class="card acc acc-amber"><span class="tag">ADR-01</span><h4>Estoque é um livro-razão</h4>
+      <p>Toda alteração vira um lançamento imutável. O saldo no cadastro é apenas um cache reconstituível.</p>
+      <ul><li>Divergência sempre auditável</li><li>Correção por estorno, nunca por UPDATE</li></ul></div>
+    <div class="card acc acc-amber"><span class="tag">ADR-02</span><h4>Custo médio ponderado móvel</h4>
+      <p>Recalculado a cada entrada. O CMV é congelado na venda — relatório de mês fechado nunca muda.</p>
+      <ul><li>Descartado: último custo (distorce margem)</li><li>Descartado: FIFO por lote (complexo demais)</li></ul></div>
+    <div class="card acc acc-amber"><span class="tag">ADR-03</span><h4>Rateio proporcional ao valor</h4>
+      <p>Frete e taxa distribuídos pelo valor de cada item, não pela quantidade.</p>
+      <ul><li>Um perfume de R$ 30 não absorve o frete de um de R$ 400</li></ul></div>
+    <div class="card acc acc-amber"><span class="tag">ADR-04</span><h4>Títulos + recebimentos + alocação</h4>
+      <p>Resolve o que um campo <span class="mono">pago boolean</span> não cobre: pagamento parcial, um PIX quitando três parcelas, e estorno.</p></div>
+    <div class="card acc acc-amber"><span class="tag">ADR-05</span><h4>Consignação com ciclo de vida</h4>
+      <p>Cada unidade tem estados: em posse → vendido, devolvido, perdido ou trocado.</p>
+      <ul><li>Responde sempre: o que está com quem, há quantos dias, valendo quanto</li></ul></div>
+    <div class="card acc acc-amber"><span class="tag">ADR-06</span><h4>Cálculo vive no banco</h4>
+      <p>Funções, triggers e views. O front apenas exibe.</p>
+      <ul><li>Elimina "o relatório não bate com a tela"</li></ul></div>
+    <div class="card acc acc-amber"><span class="tag">ADR-07</span><h4>Cancelar, não excluir</h4>
+      <p>Cadastros usam exclusão lógica. Documentos confirmados são imutáveis — só cancelamento com estorno.</p></div>
+    <div class="card acc acc-jade"><span class="tag">Stack</span><h4>Next.js 15 + Supabase</h4>
+      <p>TypeScript, Tailwind, shadcn/ui, TanStack Table/Query, Zod, Recharts, React-PDF, ExcelJS.</p>
+      <ul><li>Postgres puro — schema portável</li><li>RLS, Auth, Storage e backup nativos</li></ul></div>
+  </div>
+</section>
+
+<!-- ══════════ FLUXO DOS MÓDULOS ══════════ -->
+<section class="panel" id="fluxo">
+  <h2><span class="n">02</span>Como produto e dinheiro circulam</h2>
+  <p class="sub">O caminho completo, do fornecedor ao lucro reconhecido em caixa.</p>
+
+  <h3>Cadeia principal</h3>
+  <div class="pipe">
+    <div class="node"><span class="k">01</span><div class="t">Compras</div><div class="d">Produtos + frete + taxa → rateio proporcional → custo unitário real</div></div>
+    <div class="node"><span class="k">02</span><div class="t">Estoque</div><div class="d">Livro-razão + custo médio ponderado. Quatro bolsos.</div></div>
+    <div class="node"><span class="k">03</span><div class="t">Venda direta</div><div class="d">Consumidor ou revendedor. Baixa estoque, gera receita.</div></div>
+    <div class="node"><span class="k">04</span><div class="t">Consignação</div><div class="d">Transfere bolso. Sem receita, sem título.</div></div>
+    <div class="node"><span class="k">05</span><div class="t">Prestação de contas</div><div class="d">Vendido → receita · Devolvido → estoque · Perdido → despesa</div></div>
+    <div class="node"><span class="k">06</span><div class="t">Contas a receber</div><div class="d">Parcelas até 4x, alertas de vencimento, alocação de pagamentos</div></div>
+    <div class="node"><span class="k">07</span><div class="t">Financeiro</div><div class="d">DRE, fluxo de caixa, lucro recebido vs. a receber</div></div>
+    <div class="node"><span class="k">08</span><div class="t">Dashboard</div><div class="d">Indicadores em tempo real</div></div>
+    <div class="node"><span class="k">09</span><div class="t">Relatórios</div><div class="d">20 relatórios · PDF · Excel · impressão</div></div>
+    <div class="node"><span class="k">10</span><div class="t">Recibos</div><div class="d">Venda, entrega e prestação de contas em PDF</div></div>
+  </div>
+
+  <h3>Matriz de impacto — o que cada evento atualiza</h3>
+  <table>
+    <thead><tr><th>Evento</th><th>Estoque</th><th>Custo</th><th>A receber</th><th>Financeiro</th></tr></thead>
+    <tbody>
+      <tr><td><b>Registrar compra</b></td><td class="yes">Entrada</td><td class="warn">Recalcula CMP</td><td>—</td><td>Investimento ↑</td></tr>
+      <tr><td><b>Venda a consumidor</b></td><td class="rose no">Saída</td><td>Congela CMV</td><td class="yes">Gera títulos</td><td>Receita ↑</td></tr>
+      <tr><td><b>Venda a revendedor</b></td><td class="no">Saída</td><td>Congela CMV</td><td class="yes">Gera títulos</td><td>Receita ↑</td></tr>
+      <tr><td><b>Enviar mostruário</b></td><td class="warn">Troca de bolso</td><td>—</td><td class="mute">Nada</td><td>Investido em mostruário ↑</td></tr>
+      <tr><td><b>Revendedor vendeu</b></td><td class="no">Baixa consignado</td><td>Congela CMV</td><td class="yes">Gera título</td><td>Receita ↑</td></tr>
+      <tr><td><b>Revendedor devolveu</b></td><td class="warn">Volta a disponível</td><td>—</td><td>—</td><td>Investido ↓</td></tr>
+      <tr><td><b>Item perdido</b></td><td class="no">Baixa por perda</td><td>—</td><td>—</td><td>Despesa ↑</td></tr>
+      <tr><td><b>Registrar recebimento</b></td><td>—</td><td>—</td><td class="yes">Aloca nos títulos</td><td>Caixa ↑ · Lucro recebido ↑</td></tr>
+      <tr><td><b>Cancelar venda</b></td><td class="yes">Retorna</td><td>—</td><td class="rose">Cancela títulos</td><td>Receita ↓</td></tr>
+      <tr><td><b>Ajuste de inventário</b></td><td class="warn">Ajusta ±</td><td class="warn">Se entrada</td><td>—</td><td>Perda ou sobra</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ══════════ BANCO ══════════ -->
+<section class="panel" id="banco">
+  <h2><span class="n">03</span>25 tabelas em 9 domínios</h2>
+  <p class="sub">Normalizado até a 3ª forma normal. Caches declarados e mantidos por trigger. Fatos imutáveis.</p>
+
+  <div class="grid g2">
+    <div class="card acc acc-azure"><span class="tag">Segurança · 2</span><h4>Acesso</h4>
+      <ul><li><span class="mono">usuarios</span> — perfil vinculado ao Supabase Auth</li>
+      <li><span class="mono">permissoes</span> — matriz perfil × recurso × ação</li></ul></div>
+
+    <div class="card acc acc-azure"><span class="tag">Cadastros · 6</span><h4>Base</h4>
+      <ul><li><span class="mono">categorias</span> · <span class="mono">marcas</span></li>
+      <li><span class="mono">fornecedores</span></li>
+      <li><span class="mono">clientes</span> — CPF único, validado</li>
+      <li><span class="mono">revendedores</span> — limite e prazo de acerto</li>
+      <li><span class="mono">formas_pagamento</span> — taxa e nº de parcelas</li></ul></div>
+
+    <div class="card acc acc-jade"><span class="tag">Produtos · 1</span><h4>Catálogo</h4>
+      <ul><li><span class="mono">produtos</span> — 4 saldos + custo médio</li>
+      <li>Margens e lucros como colunas geradas</li>
+      <li>Situação derivada, nunca digitada</li></ul></div>
+
+    <div class="card acc acc-jade"><span class="tag">Compras · 2</span><h4>Entrada</h4>
+      <ul><li><span class="mono">compras</span> — subtotal, frete, taxa, outros</li>
+      <li><span class="mono">compra_itens</span> — rateio e custo unitário final</li></ul></div>
+
+    <div class="card acc acc-amber"><span class="tag">Estoque · 1</span><h4>Livro-razão</h4>
+      <ul><li><span class="mono">movimentacoes_estoque</span></li>
+      <li>Quantidade sinalizada, partida dobrada</li>
+      <li><b>Imutável</b> — UPDATE e DELETE bloqueados</li></ul></div>
+
+    <div class="card acc acc-jade"><span class="tag">Vendas · 2</span><h4>Saída</h4>
+      <ul><li><span class="mono">vendas</span> — tipo, desconto, parcelas</li>
+      <li><span class="mono">venda_itens</span> — CMV congelado</li></ul></div>
+
+    <div class="card acc acc-violet"><span class="tag">Consignação · 4</span><h4>Mostruários</h4>
+      <ul><li><span class="mono">remessas</span> — envio ao revendedor</li>
+      <li><span class="mono">remessa_itens</span> — saldo por situação</li>
+      <li><span class="mono">remessa_item_eventos</span> — fato imutável</li>
+      <li><span class="mono">prestacoes_contas</span> — o acerto</li></ul></div>
+
+    <div class="card acc acc-rose"><span class="tag">Financeiro · 4</span><h4>Dinheiro</h4>
+      <ul><li><span class="mono">titulos_receber</span> — uma linha por parcela</li>
+      <li><span class="mono">recebimentos</span> — evento de caixa</li>
+      <li><span class="mono">recebimento_alocacoes</span> — onde o dinheiro foi</li>
+      <li><span class="mono">despesas</span> — perdas e custos operacionais</li></ul></div>
+
+    <div class="card acc"><span class="tag">Sistema · 3</span><h4>Suporte</h4>
+      <ul><li><span class="mono">logs_auditoria</span> — antes e depois em JSONB</li>
+      <li><span class="mono">parametros</span> — configuração</li>
+      <li><span class="mono">notificacoes</span> — alertas gerados</li></ul></div>
+  </div>
+
+  <h3>25 invariantes garantidas pelo banco</h3>
+  <table>
+    <thead><tr><th>#</th><th>Invariante</th><th>Onde</th></tr></thead>
+    <tbody>
+      <tr><td class="mono warn">I-01</td><td>Nenhum saldo de estoque negativo</td><td class="mono">CHECK + FOR UPDATE</td></tr>
+      <tr><td class="mono warn">I-03</td><td>Saldo em cache = soma do livro-razão</td><td class="mono">trigger + reconciliação</td></tr>
+      <tr><td class="mono warn">I-04</td><td>Movimentação nunca alterada nem apagada</td><td class="mono">trigger</td></tr>
+      <tr><td class="mono warn">I-05</td><td>Σ rateios = custo acessório, ao centavo</td><td class="mono">fn_ratear_custos_compra</td></tr>
+      <tr><td class="mono warn">I-06</td><td>Σ parcelas = total da venda, ao centavo</td><td class="mono">fn_gerar_parcelas</td></tr>
+      <tr><td class="mono warn">I-09</td><td>Um título tem exatamente um devedor</td><td class="mono">CHECK</td></tr>
+      <tr><td class="mono warn">I-11</td><td>em posse + vendida + devolvida + perdida = enviada</td><td class="mono">CHECK</td></tr>
+      <tr><td class="mono warn">I-15</td><td>Documento confirmado é imutável</td><td class="mono">trigger</td></tr>
+      <tr><td class="mono warn">I-16</td><td>Produto com saldo não pode ser excluído</td><td class="mono">trigger</td></tr>
+      <tr><td class="mono warn">I-21</td><td>Parcelamento entre 1 e 4</td><td class="mono">CHECK</td></tr>
+    </tbody>
+  </table>
+  <p class="sub" style="margin-top:14px">Lista completa e as <b>7 consultas de reconciliação</b> no Documento 2, §22.
+Todas devem retornar zero linhas — é o teste semanal de saúde do sistema.</p>
+
+<h3>Regra que atravessa tudo: o lucro consolidado</h3>
+<div class="callout">
+  <div class="ct">Armadilha que o modelo evita</div>
+  <p>A receita da consignação nasce na prestação de contas, não na venda. Se os indicadores lessem
+  apenas a tabela de vendas, a <b>receita</b> da consignação apareceria e o <b>lucro</b> dela não —
+  e a identidade <span class="mono">lucro recebido + lucro a receber = lucro bruto</span> deixaria
+  de fechar. Por isso o dashboard e o DRE consomem <span class="mono">vw_resultado_consolidado</span>,
+  que une venda direta e consignação numa base única.</p>
+</div>
+</section>
+
+<!-- ══════════ TELAS ══════════ -->
+<section class="panel" id="telas">
+  <h2><span class="n">04</span>38 telas</h2>
+  <p class="sub">Quatro anatomias reutilizáveis: listagem, formulário mestre-detalhe, ficha e painel.</p>
+  <input class="search" id="scSearch" placeholder="filtrar telas…" aria-label="Filtrar telas">
+
+  <h3>Autenticação</h3>
+  <div class="scr" data-g>
+    <div class="sc"><span class="i">01</span><div><div class="n">Login</div><span class="p">/login</span></div></div>
+    <div class="sc"><span class="i">02</span><div><div class="n">Recuperar senha</div><span class="p">/recuperar-senha</span></div></div>
+  </div>
+
+  <h3>Visão geral</h3>
+  <div class="scr" data-g>
+    <div class="sc"><span class="i">03</span><div><div class="n">Dashboard</div><span class="p">/dashboard</span></div></div>
+  </div>
+
+  <h3>Compras</h3>
+  <div class="scr" data-g>
+    <div class="sc"><span class="i">04</span><div><div class="n">Lista de compras</div><span class="p">/compras</span></div></div>
+    <div class="sc"><span class="i">05</span><div><div class="n">Nova compra</div><span class="p">/compras/nova</span></div></div>
+    <div class="sc"><span class="i">06</span><div><div class="n">Detalhe da compra</div><span class="p">/compras/[id]</span></div></div>
+    <div class="sc"><span class="i">07</span><div><div class="n">Fornecedores</div><span class="p">/compras/fornecedores</span></div></div>
+  </div>
+
+  <h3>Produtos</h3>
+  <div class="scr" data-g>
+    <div class="sc"><span class="i">08</span><div><div class="n">Catálogo</div><span class="p">/produtos</span></div></div>
+    <div class="sc"><span class="i">09</span><div><div class="n">Cadastro de produto</div><span class="p">/produtos/novo</span></div></div>
+    <div class="sc"><span class="i">10</span><div><div class="n">Ficha do produto</div><span class="p">/produtos/[id]</span></div></div>
+    <div class="sc"><span class="i">11</span><div><div class="n">Categorias e marcas</div><span class="p">/configuracoes/categorias</span></div></div>
+  </div>
+
+  <h3>Estoque</h3>
+  <div class="scr" data-g>
+    <div class="sc"><span class="i">12</span><div><div class="n">Posição de estoque</div><span class="p">/estoque</span></div></div>
+    <div class="sc"><span class="i">13</span><div><div class="n">Kardex / movimentações</div><span class="p">/estoque/movimentacoes</span></div></div>
+    <div class="sc"><span class="i">14</span><div><div class="n">Ajuste / inventário</div><span class="p">/estoque/ajuste</span></div></div>
+  </div>
+
+  <h3>Clientes</h3>
+  <div class="scr" data-g>
+    <div class="sc"><span class="i">15</span><div><div class="n">Lista de clientes</div><span class="p">/clientes</span></div></div>
+    <div class="sc"><span class="i">16</span><div><div class="n">Cadastro de cliente</div><span class="p">/clientes/novo</span></div></div>
+    <div class="sc"><span class="i">17</span><div><div class="n">Ficha do cliente</div><span class="p">/clientes/[id]</span></div></div>
+  </div>
+
+  <h3>Revendedores</h3>
+  <div class="scr" data-g>
+    <div class="sc"><span class="i">18</span><div><div class="n">Lista de revendedores</div><span class="p">/revendedores</span></div></div>
+    <div class="sc"><span class="i">19</span><div><div class="n">Cadastro de revendedor</div><span class="p">/revendedores/novo</span></div></div>
+    <div class="sc"><span class="i">20</span><div><div class="n">Ficha do revendedor</div><span class="p">/revendedores/[id]</span></div></div>
+    <div class="sc"><span class="i">21</span><div><div class="n">Extrato financeiro</div><span class="p">/revendedores/[id]/extrato</span></div></div>
+    <div class="sc"><span class="i">22</span><div><div class="n">Prestação de contas</div><span class="p">…/prestacao-contas</span></div></div>
+  </div>
+
+  <h3>Mostruários</h3>
+  <div class="scr" data-g>
+    <div class="sc"><span class="i">23</span><div><div class="n">Remessas em aberto</div><span class="p">/mostruarios</span></div></div>
+    <div class="sc"><span class="i">24</span><div><div class="n">Nova remessa</div><span class="p">/mostruarios/nova</span></div></div>
+    <div class="sc"><span class="i">25</span><div><div class="n">Detalhe da remessa</div><span class="p">/mostruarios/[id]</span></div></div>
+  </div>
+
+  <h3>Vendas</h3>
+  <div class="scr" data-g>
+    <div class="sc"><span class="i">26</span><div><div class="n">Lista de vendas</div><span class="p">/vendas</span></div></div>
+    <div class="sc"><span class="i">27</span><div><div class="n">Nova venda (PDV)</div><span class="p">/vendas/nova</span></div></div>
+    <div class="sc"><span class="i">28</span><div><div class="n">Detalhe da venda</div><span class="p">/vendas/[id]</span></div></div>
+  </div>
+
+  <h3>Financeiro</h3>
+  <div class="scr" data-g>
+    <div class="sc"><span class="i">29</span><div><div class="n">Contas a receber</div><span class="p">/financeiro/contas-receber</span></div></div>
+    <div class="sc"><span class="i">30</span><div><div class="n">Recebimentos</div><span class="p">/financeiro/recebimentos</span></div></div>
+    <div class="sc"><span class="i">31</span><div><div class="n">Despesas</div><span class="p">/financeiro/despesas</span></div></div>
+    <div class="sc"><span class="i">32</span><div><div class="n">Fluxo de caixa</div><span class="p">/financeiro/fluxo-caixa</span></div></div>
+  </div>
+
+  <h3>Relatórios e sistema</h3>
+  <div class="scr" data-g>
+    <div class="sc"><span class="i">33</span><div><div class="n">Central de relatórios</div><span class="p">/relatorios</span></div></div>
+    <div class="sc"><span class="i">34</span><div><div class="n">Relatório parametrizado</div><span class="p">/relatorios/[slug]</span></div></div>
+    <div class="sc"><span class="i">35</span><div><div class="n">Parâmetros do sistema</div><span class="p">/configuracoes</span></div></div>
+    <div class="sc"><span class="i">36</span><div><div class="n">Usuários e permissões</div><span class="p">/configuracoes/usuarios</span></div></div>
+    <div class="sc"><span class="i">37</span><div><div class="n">Log de auditoria</div><span class="p">/configuracoes/auditoria</span></div></div>
+    <div class="sc"><span class="i">38</span><div><div class="n">Backup e exportação</div><span class="p">/configuracoes/backup</span></div></div>
+  </div>
+</section>
+
+<!-- ══════════ FLUXOS OPERACIONAIS ══════════ -->
+<section class="panel" id="ops">
+  <h2><span class="n">05</span>Os cinco fluxos que o sistema executa</h2>
+  <p class="sub">Cada um numa única transação: ou tudo é gravado, ou nada é.</p>
+
+  <h3>Fluxo 1 · Comprar mercadoria</h3>
+  <div class="flow">
+    <div class="step"><div class="dot">1</div><div class="body"><h5>Cabeçalho</h5><p>Fornecedor, data, documento e critério de rateio.</p></div></div>
+    <div class="step"><div class="dot">2</div><div class="body"><h5>Itens</h5><p>Produto, quantidade e valor unitário. Cadastro de produto novo sem sair da tela.</p></div></div>
+    <div class="step"><div class="dot">3</div><div class="body"><h5>Custos acessórios</h5><p>Frete, taxa de cartão e outros. O sistema converte percentual da maquininha em reais.</p>
+      <div class="out">Prévia em tempo real: custo unitário rateado e margem projetada de cada item</div></div></div>
+    <div class="step"><div class="dot">4</div><div class="body"><h5>Confirmar</h5><p>Rateio gravado e congelado, custo médio recalculado, entrada lançada no livro-razão.</p>
+      <div class="out">Estoque ↑ · custo médio atualizado · dashboard atualizado</div></div></div>
+  </div>
+
+  <h3>Fluxo 2 · Vender ao consumidor final</h3>
+  <div class="flow">
+    <div class="step"><div class="dot">1</div><div class="body"><h5>Tipo e cliente</h5><p>Define a tabela de preço. Mostra o saldo devedor atual do cliente.</p></div></div>
+    <div class="step"><div class="dot">2</div><div class="body"><h5>Produtos</h5><p>Preço sugerido pela tabela, editável. Valida saldo em tempo real e alerta preço abaixo do custo.</p></div></div>
+    <div class="step"><div class="dot">3</div><div class="body"><h5>Desconto e pagamento</h5><p>Desconto em R$ ou %, parcelamento até 4x com prévia das datas.</p>
+      <div class="out">Σ parcelas confere com o total, exibido na tela</div></div></div>
+    <div class="step"><div class="dot">4</div><div class="body"><h5>Revisão</h5><p>Total, CMV, lucro bruto e margem — antes de confirmar.</p></div></div>
+    <div class="step"><div class="dot">5</div><div class="body"><h5>Confirmar</h5><p>CMV congelado, estoque baixado, títulos gerados com lucro rateado.</p>
+      <div class="out">Recibo PDF · impressão · envio por WhatsApp</div></div></div>
+  </div>
+
+  <h3>Fluxo 3 · Enviar mostruário</h3>
+  <div class="flow">
+    <div class="step"><div class="dot">1</div><div class="body"><h5>Revendedor e tipo</h5><p>Mostruário (demonstração) ou consignação (para vender). Previsão de acerto automática.</p></div></div>
+    <div class="step"><div class="dot">2</div><div class="body"><h5>Produtos</h5><p>Custo congelado na data do envio; valor de revenda acordado.</p></div></div>
+    <div class="step"><div class="dot">3</div><div class="body"><h5>Confirmar</h5><p>Transferência entre bolsos de estoque.</p>
+      <div class="out">Sem receita · sem título · recibo de entrega para assinatura</div></div></div>
+  </div>
+
+  <h3>Fluxo 4 · Prestação de contas <span style="color:var(--amber)">— o mais importante</span></h3>
+  <div class="flow">
+    <div class="step"><div class="dot">1</div><div class="body"><h5>Levantamento</h5><p>Sistema lista todos os itens em posse, de todas as remessas, com dias e valores.</p></div></div>
+    <div class="step"><div class="dot">2</div><div class="body"><h5>Classificação</h5><p>Para cada item: quantas vendidas, devolvidas, perdidas. O restante continua em posse.</p></div></div>
+    <div class="step"><div class="dot">3</div><div class="body"><h5>Resumo</h5><p>Valor devido, lucro bruto do acerto, perdas absorvidas e resultado líquido.</p></div></div>
+    <div class="step"><div class="dot">4</div><div class="body"><h5>Confirmar</h5><p>Eventos gravados; vendidos baixam; devolvidos voltam ao estoque; perdidos viram despesa; títulos gerados.</p>
+      <div class="out">PDF de prestação de contas para assinatura</div></div></div>
+  </div>
+
+  <h3>Fluxo 5 · Receber um pagamento</h3>
+  <div class="flow">
+    <div class="step"><div class="dot">1</div><div class="body"><h5>Selecionar títulos</h5><p>Filtra por vencidos, a vencer, cliente ou revendedor. Seleção múltipla.</p></div></div>
+    <div class="step"><div class="dot">2</div><div class="body"><h5>Informar o recebimento</h5><p>Valor, data, forma e comprovante.</p></div></div>
+    <div class="step"><div class="dot">3</div><div class="body"><h5>Alocar</h5><p>Sugestão automática do mais antigo para o mais novo, totalmente editável.</p>
+      <div class="out">Quita parcial, quita várias parcelas de uma vez, permite estorno</div></div></div>
+  </div>
+</section>
+
+<!-- ══════════ CÁLCULOS ══════════ -->
+<section class="panel" id="calc">
+  <h2><span class="n">06</span>Motor de cálculo</h2>
+  <p class="sub">Fonte única de verdade. Dashboard, relatórios e PDFs consomem exatamente estas fórmulas.</p>
+
+  <h3>Custo de compra</h3>
+  <div class="fx">Custo acessório      = frete + taxa_cartão + outros
+Custo total          = Σ subtotais + Custo acessório
+
+<b>Rateio do item</b>       = Custo acessório × (subtotal_item ÷ Σ subtotais)
+<b>Custo unitário</b>       = (subtotal_item + rateio) ÷ quantidade
+
+<i>Σ rateios deve ser EXATAMENTE o custo acessório.
+Resíduo de centavos vai para o item de maior valor.</i></div>
+
+  <h3>Custo médio ponderado móvel</h3>
+  <div class="fx">Na entrada:
+  <b>custo_médio</b> = (qtd_ant × custo_ant + qtd_ent × custo_ent) ÷ (qtd_ant + qtd_ent)
+
+Na saída:
+  custo_médio permanece inalterado
+  <b>CMV do item</b> = quantidade × custo_médio no momento  <i>← congelado</i></div>
+
+  <h3>Resultado</h3>
+  <div class="fx">Receita líquida   = Receita bruta − descontos
+CMV               = Σ (qtd vendida × custo praticado)
+<b>LUCRO BRUTO</b>       = Receita líquida − CMV
+
+Despesas          = operacionais + perdas + taxas + fretes de envio
+<b>LUCRO LÍQUIDO</b>     = Lucro bruto − Despesas
+
+Margem bruta %    = Lucro bruto ÷ Receita líquida × 100</div>
+
+  <h3>Regime de caixa — a parte que mais gera confusão</h3>
+  <div class="fx">Por venda:
+  % recebido      = Σ alocações dos títulos ÷ Total da venda
+  <b>Lucro recebido</b>  = Lucro da venda × % recebido
+  <b>Lucro a receber</b> = Lucro da venda − Lucro recebido
+
+Conferência obrigatória:
+  <i>Lucro Recebido + Lucro a Receber = Lucro Bruto  ✔</i></div>
+
+  <h3>Posição patrimonial</h3>
+  <div class="fx">Estoque disponível  = Σ (qtd_disponível × custo_médio)
+Em mostruário       = Σ (itens em posse tipo MOSTRUÁRIO × custo)
+Com revendedores    = Σ (itens em posse tipo CONSIGNAÇÃO × custo)
+
+<b>INVESTIMENTO TOTAL</b>  = soma dos bolsos a custo
+Potencial de venda  = Σ (qtd_total × preço_consumidor)
+Lucro potencial     = Potencial − Investimento</div>
+
+  <div class="callout">
+    <div class="ct">Regra de arredondamento — única em todo o sistema</div>
+    <p>Valores em <span class="mono">NUMERIC(14,2)</span>, arredondamento half-up. Em qualquer divisão,
+    cada fatia é arredondada e o <b>resíduo é somado ao maior elemento</b>. Isso garante matematicamente
+    que <span class="mono">Σ(partes) = todo</span>, sem centavo perdido.<br>
+    <span class="mono" style="color:var(--jade)">R$ 100,00 em 3x → 33,34 + 33,33 + 33,33 = 100,00</span></p>
+  </div>
+</section>
+
+<!-- ══════════ REGRAS ══════════ -->
+<section class="panel" id="regras">
+  <h2><span class="n">07</span>Regras de negócio</h2>
+  <p class="sub">Numeradas para referência cruzada entre os quatro documentos.</p>
+  <input class="search" id="rSearch" placeholder="buscar regra… (ex: estoque, desconto, parcela)" aria-label="Buscar regra">
+
+  <div id="rList">
+    <h3 data-rg>Estoque</h3>
+    <div class="rule" data-r><div class="id">RN-E01</div><div class="tx">O estoque nunca pode ficar negativo em nenhum bolso.</div></div>
+    <div class="rule" data-r><div class="id">RN-E02</div><div class="tx">Toda alteração de saldo gera lançamento no livro-razão. Não existe alteração direta.</div></div>
+    <div class="rule" data-r><div class="id">RN-E03</div><div class="tx">qtd_total = disponível + reservado + mostruário + consignado.</div></div>
+    <div class="rule" data-r><div class="id">RN-E04</div><div class="tx">Movimentações são imutáveis. Correção apenas por estorno.</div></div>
+    <div class="rule" data-r><div class="id">RN-E05</div><div class="tx">Envio de mostruário transfere entre bolsos; não altera o total nem gera receita.</div></div>
+    <div class="rule" data-r><div class="id">RN-E06</div><div class="tx">Devolução retorna ao bolso disponível pelo mesmo custo com que saiu.</div></div>
+    <div class="rule" data-r><div class="id">RN-E07</div><div class="tx">Ajuste de inventário exige motivo obrigatório e fica destacado na auditoria.</div></div>
+    <div class="rule" data-r><div class="id">RN-E08</div><div class="tx">Produto com saldo não pode ser excluído — apenas inativado.</div></div>
+
+    <h3 data-rg>Compras e custo</h3>
+    <div class="rule" data-r><div class="id">RN-C01</div><div class="tx">Custo total = Σ subtotais + frete + taxa de cartão + outros custos.</div></div>
+    <div class="rule" data-r><div class="id">RN-C02</div><div class="tx">Custos acessórios rateados proporcionalmente ao valor de cada item.</div></div>
+    <div class="rule" data-r><div class="id">RN-C03</div><div class="tx">Σ rateios = custo acessório exatamente; resíduo no item de maior valor.</div></div>
+    <div class="rule" data-r><div class="id">RN-C04</div><div class="tx">Custo unitário do item é gravado e nunca recalculado depois de confirmado.</div></div>
+    <div class="rule" data-r><div class="id">RN-C05</div><div class="tx">Confirmar compra recalcula o custo médio ponderado do produto.</div></div>
+    <div class="rule" data-r><div class="id">RN-C06</div><div class="tx">Compra confirmada não pode ser editada — apenas cancelada com estorno.</div></div>
+    <div class="rule" data-r><div class="id">RN-C07</div><div class="tx">Cancelar compra exige saldo disponível suficiente para estornar.</div></div>
+
+    <h3 data-rg>Produtos e preços</h3>
+    <div class="rule" data-r><div class="id">RN-P01</div><div class="tx">Código do produto é único e não reutilizável.</div></div>
+    <div class="rule" data-r><div class="id">RN-P02</div><div class="tx">Lucro consumidor = preço consumidor − custo médio.</div></div>
+    <div class="rule" data-r><div class="id">RN-P03</div><div class="tx">Lucro revendedor = preço revendedor − custo médio.</div></div>
+    <div class="rule" data-r><div class="id">RN-P04</div><div class="tx">Margem % = (preço − custo) ÷ preço × 100. Markup também exibido.</div></div>
+    <div class="rule" data-r><div class="id">RN-P05</div><div class="tx">Preço abaixo do custo é permitido, mas gera aviso destacado.</div></div>
+    <div class="rule" data-r><div class="id">RN-P06</div><div class="tx">Preço revendedor ≤ preço consumidor — aviso se violado, não bloqueia.</div></div>
+    <div class="rule" data-r><div class="id">RN-P07</div><div class="tx">Situação do produto é derivada dos saldos, nunca digitada.</div></div>
+
+    <h3 data-rg>Vendas</h3>
+    <div class="rule" data-r><div class="id">RN-V01</div><div class="tx">Consumidor usa preço consumidor; revendedor usa preço revendedor. Editável e registrado.</div></div>
+    <div class="rule" data-r><div class="id">RN-V02</div><div class="tx">Total = Σ (qtd × preço praticado) − desconto.</div></div>
+    <div class="rule" data-r><div class="id">RN-V03</div><div class="tx">Desconto não pode exceder o subtotal; acima do parâmetro exige confirmação.</div></div>
+    <div class="rule" data-r><div class="id">RN-V04</div><div class="tx">Parcelamento de 1 a 4 vezes. Σ parcelas = total exatamente.</div></div>
+    <div class="rule" data-r><div class="id">RN-V05</div><div class="tx">Vencimento padrão a cada 30 dias, editável parcela a parcela.</div></div>
+    <div class="rule" data-r><div class="id">RN-V06</div><div class="tx">Venda à vista gera título PAGO e o recebimento correspondente.</div></div>
+    <div class="rule" data-r><div class="id">RN-V07</div><div class="tx">Não é possível vender sem saldo disponível.</div></div>
+    <div class="rule" data-r><div class="id">RN-V08</div><div class="tx">O CMV é congelado no momento da venda.</div></div>
+    <div class="rule" data-r><div class="id">RN-V09</div><div class="tx">Cancelar venda retorna estoque, cancela títulos e exige estorno explícito de recebimentos.</div></div>
+    <div class="rule" data-r><div class="id">RN-V10</div><div class="tx">Número da venda é sequencial, único e sem lacunas.</div></div>
+
+    <h3 data-rg>Consignação e mostruário</h3>
+    <div class="rule" data-r><div class="id">RN-M01</div><div class="tx">Remessa não gera receita nem título a receber.</div></div>
+    <div class="rule" data-r><div class="id">RN-M02</div><div class="tx">Cada item carrega custo congelado no envio e valor de revenda acordado.</div></div>
+    <div class="rule" data-r><div class="id">RN-M03</div><div class="tx">Toda transição de situação é registrada com data e usuário.</div></div>
+    <div class="rule" data-r><div class="id">RN-M04</div><div class="tx">Item vendido gera título a receber pelo valor acordado.</div></div>
+    <div class="rule" data-r><div class="id">RN-M05</div><div class="tx">Item perdido gera despesa pelo custo; cobrança do revendedor é opcional.</div></div>
+    <div class="rule" data-r><div class="id">RN-M06</div><div class="tx">Sistema calcula dias em posse e destaca acima do limite parametrizado (60 dias).</div></div>
+    <div class="rule" data-r><div class="id">RN-M07</div><div class="tx">Remessa só encerra quando nenhum item estiver em posse.</div></div>
+
+    <h3 data-rg>Financeiro</h3>
+    <div class="rule" data-r><div class="id">RN-F01</div><div class="tx">Situação do título é derivada: pago, parcial, vencido ou a vencer.</div></div>
+    <div class="rule" data-r><div class="id">RN-F02</div><div class="tx">Saldo = valor original − Σ alocações não estornadas.</div></div>
+    <div class="rule" data-r><div class="id">RN-F03</div><div class="tx">Um recebimento pode ser alocado em vários títulos; Σ alocações ≤ valor recebido.</div></div>
+    <div class="rule" data-r><div class="id">RN-F04</div><div class="tx">Estorno reverte alocações e reabre títulos, sem apagar histórico.</div></div>
+    <div class="rule" data-r><div class="id">RN-F05</div><div class="tx">Alerta diário para parcelas vencendo em até 3 dias e vencidas.</div></div>
+    <div class="rule" data-r><div class="id">RN-F06</div><div class="tx">Data de recebimento não pode ser futura nem anterior à emissão.</div></div>
+    <div class="rule" data-r><div class="id">RN-F07</div><div class="tx">Todo valor é NUMERIC(14,2) com arredondamento half-up.</div></div>
+
+    <h3 data-rg>Sistema</h3>
+    <div class="rule" data-r><div class="id">RN-S01</div><div class="tx">Toda operação em tabela de negócio gera log com usuário, data e valores antes/depois.</div></div>
+    <div class="rule" data-r><div class="id">RN-S02</div><div class="tx">Exclusão sempre pede confirmação nomeando o registro.</div></div>
+    <div class="rule" data-r><div class="id">RN-S03</div><div class="tx">Cadastros usam exclusão lógica; documentos usam cancelamento.</div></div>
+    <div class="rule" data-r><div class="id">RN-S04</div><div class="tx">Toda listagem tem busca, filtro por período, ordenação, paginação e exportação.</div></div>
+    <div class="rule" data-r><div class="id">RN-S05</div><div class="tx">Mensagens de erro em linguagem de negócio, nunca técnica.</div></div>
+    <div class="rule" data-r><div class="id">RN-S06</div><div class="tx">Nenhum cálculo financeiro é solicitado ao usuário.</div></div>
+  </div>
+</section>
+
+<!-- ══════════ PLANO ══════════ -->
+<section class="panel" id="plano">
+  <h2><span class="n">08</span>Plano de desenvolvimento</h2>
+  <p class="sub">Sequência obrigatória — cada etapa depende estruturalmente da anterior. 39 dias úteis.</p>
+
+  <div class="tl">
+    <div class="ph done"><div class="num">0</div><div><h5>Fundação</h5><p>Projeto, layout, autenticação, componentes base. Aplicação que navega, sem negócio.</p></div><div class="dur">3 dias</div></div>
+    <div class="ph done"><div class="num">1</div><div><h5>Banco de dados completo</h5><p>Migrations, funções, triggers, views, RLS, seed, tipos. <b>Marco crítico:</b> nenhuma tela antes disto.</p></div><div class="dur">4 dias</div></div>
+    <div class="ph"><div class="num">2</div><div><h5>Cadastros base</h5><p>Fornecedores, categorias, produtos com foto e margens, clientes, revendedores, busca global.</p></div><div class="dur">4 dias</div></div>
+    <div class="ph"><div class="num">3</div><div><h5>Compras e entrada de estoque</h5><p>Rateio com prévia, custo médio, kardex, inventário. <b>Testes unitários obrigatórios.</b></p></div><div class="dur">4 dias</div></div>
+    <div class="ph"><div class="num">4</div><div><h5>Vendas e contas a receber</h5><p>PDV, parcelamento, títulos, alocação de recebimentos, estorno, cancelamento.</p></div><div class="dur">5 dias</div></div>
+    <div class="ph"><div class="num">5</div><div><h5>Consignação e revendedores</h5><p>Remessas, painel de itens em posse, assistente de prestação de contas, extrato.</p></div><div class="dur">5 dias</div></div>
+    <div class="ph"><div class="num">6</div><div><h5>Financeiro e dashboard</h5><p>Despesas, fluxo de caixa, todos os indicadores, gráficos e listas de atenção.</p></div><div class="dur">4 dias</div></div>
+    <div class="ph"><div class="num">7</div><div><h5>Documentos e relatórios</h5><p>Três PDFs, 20 relatórios, exportação Excel e impressão.</p></div><div class="dur">4 dias</div></div>
+    <div class="ph"><div class="num">8</div><div><h5>Alertas e automações</h5><p>Job diário de vencimentos, notificações, alertas de estoque e mostruário.</p></div><div class="dur">2 dias</div></div>
+    <div class="ph"><div class="num">9</div><div><h5>Auditoria e go-live</h5><p>Protocolo completo do Documento 4, otimização, testes E2E, responsividade, backup testado.</p></div><div class="dur">4 dias</div></div>
+  </div>
+
+  <h3>Marcos de validação</h3>
+  <table>
+    <thead><tr><th>Marco</th><th>Critério objetivo de aceite</th></tr></thead>
+    <tbody>
+      <tr><td class="mono warn">M1</td><td>Invariantes de estoque e financeiras passam com dados fictícios</td></tr>
+      <tr><td class="mono warn">M2</td><td>Compra com 5 itens, frete e taxa gera custos que somam <b>ao centavo</b> o total pago</td></tr>
+      <tr><td class="mono warn">M3</td><td>Venda em 3x gera 3 parcelas somando o total; recebimento parcial atualiza a situação</td></tr>
+      <tr><td class="mono warn">M4</td><td>Remessa de 10 itens com 6 vendidos, 3 devolvidos e 1 perdido fecha sem divergência</td></tr>
+      <tr><td class="mono warn">M5</td><td><b>Lucro recebido + lucro a receber = lucro bruto</b>, sempre</td></tr>
+      <tr><td class="mono warn">M6</td><td>Checklist de produção 100% aprovado nos itens bloqueantes</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Dez riscos mapeados</h3>
+  <div class="grid g2">
+    <div class="card acc acc-rose"><span class="tag">R1 · Crítico</span><h4>Confundir consignação com venda</h4>
+      <p>Inflaria a receita. Mitigado por separação estrutural no modelo — a consignação é fisicamente incapaz de gerar título.</p></div>
+    <div class="card acc acc-rose"><span class="tag">R2 · Alto</span><h4>Divergência de saldo de estoque</h4>
+      <p>Livro-razão imutável + trigger de invariante + rotina semanal de reconciliação.</p></div>
+    <div class="card acc acc-rose"><span class="tag">R3 · Alto</span><h4>Centavos perdidos em rateios</h4>
+      <p>Regra única de resíduo + 24 casos de teste unitário obrigatórios.</p></div>
+    <div class="card acc acc-rose"><span class="tag">R4 · Alto</span><h4>Tela e relatório com números diferentes</h4>
+      <p>Todo cálculo em view no banco; o front apenas exibe.</p></div>
+    <div class="card acc acc-rose"><span class="tag">R5 · Crítico</span><h4>Perda de dados</h4>
+      <p>Backup diário, PITR, exportação semanal externa e restauração testada semestralmente.</p></div>
+    <div class="card acc acc-amber"><span class="tag">R9 · Alto</span><h4>Editar documento confirmado</h4>
+      <p>Documentos imutáveis após confirmação; apenas cancelamento com estorno.</p></div>
+  </div>
+</section>
+
+<footer>
+  <span>Sistema de Gestão de Fragrâncias · Documentação técnica v1.0</span>
+  <span>Documentos 01 · 02 · 03 · 04</span>
+</footer>
+
+</div>
+
+<script>
+// Tabs
+const tabs=[...document.querySelectorAll('nav button')];
+const panels=[...document.querySelectorAll('.panel')];
+tabs.forEach(t=>t.addEventListener('click',()=>{
+  tabs.forEach(x=>x.setAttribute('aria-selected',x===t));
+  panels.forEach(p=>p.classList.toggle('on',p.id===t.dataset.p));
+  window.scrollTo({top:0,behavior:'smooth'});
+}));
+
+// Filtro de regras
+const rs=document.getElementById('rSearch');
+if(rs) rs.addEventListener('input',e=>{
+  const q=e.target.value.toLowerCase().trim();
+  document.querySelectorAll('#rList [data-r]').forEach(r=>{
+    r.style.display=!q||r.textContent.toLowerCase().includes(q)?'':'none';
+  });
+  document.querySelectorAll('#rList h3').forEach(h=>{
+    let n=h.nextElementSibling,vis=false;
+    while(n&&n.tagName!=='H3'){ if(n.style.display!=='none') vis=true; n=n.nextElementSibling; }
+    h.style.display=vis?'':'none';
+  });
+});
+
+// Filtro de telas
+const ss=document.getElementById('scSearch');
+if(ss) ss.addEventListener('input',e=>{
+  const q=e.target.value.toLowerCase().trim();
+  document.querySelectorAll('#telas .sc').forEach(s=>{
+    s.style.display=!q||s.textContent.toLowerCase().includes(q)?'':'none';
+  });
+  document.querySelectorAll('#telas h3').forEach(h=>{
+    const g=h.nextElementSibling;
+    const vis=[...g.querySelectorAll('.sc')].some(s=>s.style.display!=='none');
+    h.style.display=vis?'':'none'; g.style.display=vis?'':'none';
+  });
+});
+</script>
+</body>
+</html>
