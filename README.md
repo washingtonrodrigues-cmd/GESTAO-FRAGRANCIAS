@@ -88,6 +88,8 @@ inicial:
 | `0017` | fecha as funções internas — só as 14 que a interface usa continuam expostas na API |
 | `0018` | corrige gatilho que impedia qualquer alteração na tabela de usuários |
 | `0019` | usuário criado pelo painel do Supabase ganha perfil automaticamente |
+| `0020` | corrige a `0017`, que revogou permissão de uma função usada em índices |
+| `0021` | fecha para visitante a view de diagnóstico criada na `0020` |
 
 ### Decisões de modelagem
 
@@ -115,6 +117,14 @@ foram descartadas e o porquê. As três que mais moldam o resto:
 - Log de auditoria em todas as tabelas de movimento.
 
 Roteiro para reconferir o bloqueio de visitante não autenticado: `docs/02-BANCO-DE-DADOS.md`, §18.
+
+**Cuidado ao revogar permissões de função.** Função usada em índice, constraint, coluna gerada ou
+view é avaliada com a permissão de **quem faz a operação** — revogar o `EXECUTE` quebra a gravação
+inteira. A view `vw_permissoes_faltando` existe para acusar isso e **deve estar sempre vazia**:
+
+```sql
+select * from vw_permissoes_faltando;   -- 0 linhas = tudo certo
+```
 
 ---
 

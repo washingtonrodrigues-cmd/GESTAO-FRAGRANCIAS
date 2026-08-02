@@ -3275,3 +3275,86 @@ funções que a interface precisa chamar (`fn_confirmar_venda`, `fn_prestar_cont
 `fn_tem_permissao`, usadas dentro das próprias políticas de RLS — todas intencionais e todas
 exigindo sessão autenticada. O 13º é a proteção contra senhas vazadas, que é uma configuração
 do painel de Auth, não do banco.
+
+---
+
+# 19. Adendo — Regressão da 0017 e a correção (migrações 0020 e 0021)
+
+## 19.1 O que quebrou
+
+A migração `0017_fechar_helpers_internos` revogou `EXECUTE` de toda função que a interface não
+chama diretamente. O raciocínio estava certo para os ajudantes internos: eles só rodam de dentro
+de funções `SECURITY DEFINER`, e nesse caminho o Postgres **não** checa a permissão de quem
+disparou a operação.
+
+O raciocínio falhou num ponto: `fn_norm(text)` aparece em **sete índices**.
+
+```
+uq_categorias_nome · uq_marcas_nome · idx_fornecedores_nome
+idx_produtos_nome · idx_produtos_busca · idx_clientes_nome · idx_revendedores_nome
+```
+
+Expressão de índice **é** avaliada com a permissão de quem faz o `INSERT`/`UPDATE`. Sem o
+`EXECUTE`, toda gravação nessas seis tabelas passou a morrer em:
+
+```
+permission denied for function fn_norm
+```
+
+Na prática: não dava para cadastrar nem editar produto, cliente, revendedor, fornecedor,
+categoria ou marca. Compras, vendas e consignações continuavam funcionando, porque passam por
+funções `SECURITY DEFINER`.
+
+## 19.2 A correção
+
+```sql
+GRANT EXECUTE ON FUNCTION public.fn_norm(text) TO authenticated;
+```
+
+`fn_norm` é `IMMUTABLE`, `STRICT`, sem `SECURITY DEFINER`, e faz apenas
+`lower(unaccent(texto))`. Não lê nem escreve dado nenhum, então conceder o `EXECUTE` não abre
+superfície de ataque.
+
+## 19.3 A rede de proteção
+
+Para o mesmo erro não passar despercebido de novo, a 0020 criou `vw_permissoes_faltando`. Ela
+cruza toda função sem `EXECUTE` para `authenticated` com os lugares onde o Postgres **checa**
+permissão — índice, constraint, default, coluna gerada e view:
+
+```sql
+select * from vw_permissoes_faltando;
+```
+
+**Deve estar sempre vazia.** Qualquer linha significa que alguma gravação vai falhar. Vale
+consultar depois de qualquer migração que mexa em `GRANT`/`REVOKE`.
+
+A 0021 fechou essa view para visitante não autenticado — ela nasceu legível por `anon`, porque o
+Supabase concede privilégio padrão em objetos novos do schema `public`. Não expunha dado de
+negócio, mas a regra é não deixar nada aberto.
+
+## 19.4 Roteiro executado depois da correção
+
+Com sessão real simulada (`request.jwt.claims` do usuário admin), tudo revertido ao final:
+
+| Etapa | Resultado |
+|---|---|
+| Cadastro de categoria, fornecedor, produto, cliente, revendedor | ✓ |
+| Compra confirmada | ✓ custo médio R$ 103,00 (100 + 3 de rateio) |
+| Venda em 2× com vencimento escolhido | ✓ 2 parcelas geradas |
+| Reagendar vencimento de parcela | ✓ |
+| Registrar recebimento | ✓ |
+| Remessa em consignação confirmada | ✓ |
+| Prestação de contas | ✓ |
+| Ajuste de estoque | ✓ |
+| DRE | ✓ |
+| Leitura de 6 views + log de auditoria | ✓ |
+| `vw_permissoes_faltando` | 0 linhas |
+
+E o visitante não autenticado continua barrado: ler produtos, gravar produto, chamar `fn_norm` e
+ler a view de diagnóstico — todos recusados.
+
+## 19.5 Lição para migrações futuras
+
+Antes de revogar `EXECUTE` de qualquer função, verificar se ela é referenciada em índice,
+constraint, default, coluna gerada ou view. Nesses lugares a permissão é do usuário que opera, não
+do dono do objeto — e o erro só aparece na hora de gravar, não na hora da migração.
