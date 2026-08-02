@@ -20,6 +20,12 @@ done
 cat "${PARTES[@]}" > GESTAO-FRAGRANCIAS.html
 echo "✓ GESTAO-FRAGRANCIAS.html gerado ($(wc -c < GESTAO-FRAGRANCIAS.html) bytes)"
 
+# public/index.html é o que a Vercel publica. Mesmo arquivo, outro nome:
+# na web o navegador procura index.html; no computador o nome descritivo ajuda.
+mkdir -p public
+cp GESTAO-FRAGRANCIAS.html public/index.html
+echo "✓ public/index.html atualizado (é o que vai para o ar)"
+
 # Conferência de sintaxe: o navegador só reclamaria depois de abrir.
 if command -v node >/dev/null 2>&1; then
   node -e '

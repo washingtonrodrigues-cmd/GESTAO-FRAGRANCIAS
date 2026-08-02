@@ -15,3 +15,6 @@ teste-resultado.txt
 # lixo de sistema operacional
 .DS_Store
 Thumbs.db
+
+# temporário da transferência — pode apagar
+_to_delete_patch/

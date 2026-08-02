@@ -9,14 +9,25 @@ negócio dentro do banco.
 
 ---
 
-## Como rodar
+## Como usar
 
-1. Baixe `GESTAO-FRAGRANCIAS.html`.
-2. Abra com duplo clique.
-3. Entre com o e-mail e a senha cadastrados no painel do Supabase.
+**Pelo navegador** — o site publicado na Vercel. Abre em qualquer dispositivo, inclusive celular,
+sem baixar nada.
 
-Precisa de internet. O mesmo arquivo pode ser aberto em vários computadores — os dados são os
-mesmos, porque estão no servidor.
+**Pelo arquivo** — baixe `GESTAO-FRAGRANCIAS.html` e abra com duplo clique. Funciona igual e serve
+de plano B se o site estiver fora do ar.
+
+Nos dois casos é preciso internet e login. Os dados são os mesmos, porque estão no servidor.
+
+### Publicação na Vercel
+
+O site é **estático**: nenhuma compilação, nenhuma dependência instalada no deploy. O `vercel.json`
+manda servir a pasta `public/`, que contém um único `index.html` — cópia byte a byte do
+`GESTAO-FRAGRANCIAS.html`, mantida em dia pelo `scripts/build.sh`.
+
+Deixar o endereço público não expõe dados: a página em si não contém nada sensível, e sem login o
+Supabase recusa qualquer leitura (RLS ativo nas 25 tabelas, nada liberado para visitante não
+autenticado).
 
 ---
 
@@ -24,6 +35,8 @@ mesmos, porque estão no servidor.
 
 ```
 GESTAO-FRAGRANCIAS.html      o sistema pronto para uso (gerado por scripts/build.sh)
+public/index.html            o mesmo arquivo, é o que a Vercel publica
+vercel.json                  configuração do deploy: estático, sem build
 app/                         o código-fonte, dividido em 8 partes
   part1.html                 estrutura da página, CSS, biblioteca do Supabase embutida
   part2.js                   utilidades, autenticação, navegação, componentes
@@ -50,8 +63,9 @@ código fica em oito partes e `scripts/build.sh` concatena. **Edite `app/`, nunc
 ./scripts/build.sh
 ```
 
-O script confere a sintaxe do JavaScript e recusa publicar se encontrar qualquer credencial no
-arquivo gerado.
+O script gera os dois arquivos (`GESTAO-FRAGRANCIAS.html` e `public/index.html`), confere a
+sintaxe do JavaScript e recusa publicar se encontrar qualquer credencial no arquivo gerado.
+Depois é só `git push` — a Vercel publica sozinha a cada commit na `main`.
 
 ---
 
