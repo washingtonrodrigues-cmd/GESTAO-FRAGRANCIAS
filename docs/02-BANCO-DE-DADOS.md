@@ -3358,3 +3358,143 @@ ler a view de diagnóstico — todos recusados.
 Antes de revogar `EXECUTE` de qualquer função, verificar se ela é referenciada em índice,
 constraint, default, coluna gerada ou view. Nesses lugares a permissão é do usuário que opera, não
 do dono do objeto — e o erro só aparece na hora de gravar, não na hora da migração.
+
+---
+
+# 20. Adendo — Mostruário e sigilo de custo (migrações 0022 a 0024)
+
+## 20.1 O problema
+
+Duas coisas apareceram no uso real:
+
+1. **O custo de aquisição aparecia nos documentos entregues ao revendedor** — recibo de entrega e
+   prestação de contas traziam colunas "Custo un." e "Valor de custo". Informação interna, na mão
+   de quem não deveria vê-la.
+2. **Mostruário podia ser marcado como vendido**, gerando cobrança contra o revendedor. Amostra de
+   demonstração não é mercadoria à venda; se ela se perde, o custo é da empresa.
+
+## 20.2 Custo fora dos documentos do revendedor
+
+`docRemessa` e `imprimirPrestacao` passaram a mostrar **apenas valor de revenda**. Saíram: coluna
+"Custo un." do recibo de entrega, linha "Valor de custo" do total, coluna "Custo un." dos produtos
+recebidos, coluna "Custo" dos produtos em posse e o valor da perda absorvida.
+
+O custo continua visível nas telas internas, nos 19 relatórios e no DRE.
+
+## 20.3 Baixa de mostruário
+
+Três valores novos de enum (migração 0022, separada porque o PostgreSQL não deixa usar um valor de
+enum na mesma transação em que ele nasce):
+
+| Enum | Valor novo |
+|---|---|
+| `status_item_remessa_enum` | `BAIXADO` |
+| `tipo_movimento_enum` | `BAIXA_MOSTRUARIO` |
+| `categoria_despesa_enum` | `BAIXA_MOSTRUARIO` |
+
+A migração 0023 acrescentou `remessa_itens.qtd_baixada`, ensinou o gatilho
+`trg_fn_atualiza_remessa_item` a contá-la, e reescreveu `fn_prestar_contas` para aceitar `baixada`
+por item. O que a função faz com a baixa:
+
+- grava evento `BAIXADO` com o motivo informado;
+- lança movimento `BAIXA_MOSTRUARIO` tirando do bolso MOSTRUARIO;
+- cria **despesa** na categoria `BAIXA_MOSTRUARIO`;
+- **não** soma ao valor devido, **não** gera título, **não** toca no revendedor.
+
+Duas travas novas, no banco:
+
+```
+Produto em mostruário não pode ser vendido. Para vender, devolva ao estoque
+e registre uma venda normal.
+
+A baixa como custo da empresa vale apenas para mostruário. Em consignação
+use devolvido ou perdido.
+```
+
+A migração 0024 corrigiu a invariante do item, que não contava a nova coluna:
+
+```sql
+CHECK (qtd_em_posse + qtd_vendida + qtd_devolvida + qtd_perdida + qtd_baixada = quantidade)
+```
+
+## 20.4 Na interface
+
+O assistente de prestação de contas ganhou a coluna **Baixa (meu custo)** e passou a identificar
+cada linha com um selo *Mostruário* ou *Consignação*. Em linha de mostruário o campo "Vendidas"
+fica travado; em linha de consignação, o campo "Baixa" é que fica travado — ambos com explicação no
+`title`. O resumo mostra a baixa como custo próprio, não cobrado, e desconta do resultado líquido
+do acerto.
+
+## 20.5 Roteiro executado (tudo revertido ao final)
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Vender item de mostruário | recusado pelo banco | ✓ |
+| Baixar 1 + devolver 1 (de 3 em posse) | aceito | ✓ |
+| Valor cobrado do revendedor | R$ 0,00 | ✓ |
+| Parcelas geradas | 0 | ✓ |
+| Despesa lançada | `BAIXA_MOSTRUARIO` R$ 100,00 | ✓ |
+| Em posse depois | 1 un | ✓ |
+| Estoque disponível | 8 un (10 − 3 + 1 devolvida) | ✓ |
+| Ainda em mostruário | 1 un | ✓ |
+| Baixar mais do que tem em posse | recusado | ✓ |
+| Baixa em item de consignação | recusado | ✓ |
+
+---
+
+# 21. Adendo — Recebimento por produto e quantidade (migrações 0025 a 0028)
+
+## 21.1 O problema
+
+O revendedor acerta por peça — *"hoje te pago 3 frascos"* —, não por parcela. O sistema só sabia
+receber um valor em dinheiro e alocar nas parcelas; quantas unidades já estavam pagas ficava na
+cabeça de quem opera.
+
+## 21.2 Modelagem
+
+**`recebimento_itens`** guarda as peças de cada recebimento:
+
+| Coluna | Papel |
+|---|---|
+| `venda_item_id` | quando a peça veio de venda direta ao revendedor |
+| `remessa_item_evento_id` | quando veio de peça vendida em consignação |
+| `produto_id`, `quantidade`, `valor_unitario`, `valor_total` | o que foi pago |
+| `estornado` | acompanha o estorno do recebimento, por gatilho |
+
+Um `CHECK` garante que exatamente **uma** das duas origens está preenchida. Recebimento por valor
+não gera linha aqui — a tabela só existe para o acerto por peça.
+
+**`vw_itens_a_pagar_revendedor`** une as duas origens no mesmo formato: produto, quantidade devida,
+quantidade já paga, quantidade em aberto, valor unitário. Só aparece o que ainda tem peça a pagar.
+
+**`fn_receber_por_item(revendedor, data, itens, forma, obs)`** faz duas passadas: valida tudo e
+soma (recusa quantidade maior que a devida, item de outro revendedor, item já quitado), depois grava
+o recebimento, as peças e as alocações — abatendo as parcelas do documento de origem, da mais antiga
+para a mais nova.
+
+## 21.3 A lição da 0028
+
+A primeira versão cacheava `qtd_paga` em `venda_itens` e em `remessa_item_eventos`, por gatilho.
+Bateu de frente com uma regra da própria modelagem: **`remessa_item_eventos` é livro-razão imutável**
+e tem gatilho que recusa qualquer `UPDATE`. O erro veio na hora do teste:
+
+```
+A tabela remessa_item_eventos é um registro histórico imutável.
+Use lançamento de estorno.
+```
+
+O cache foi removido e a view passou a somar `recebimento_itens` no momento da consulta. Além de
+respeitar a imutabilidade, elimina a possibilidade de o cache divergir da verdade.
+
+## 21.4 Roteiro executado (tudo revertido ao final)
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Venda direta 10 un × R$ 150 em 2×; paga 3 | R$ 450,00; saldo R$ 1.050,00; restam 7 un | ✓ |
+| Pagar 20 de 7 restantes | recusado | ✓ |
+| Paga as 7 restantes | saldo R$ 0,00; 2 parcelas quitadas | ✓ |
+| Estorno do recebimento | volta a dever 7 un e R$ 1.050,00 | ✓ |
+| Consignação: vendeu 5 un × R$ 180; paga 2 | saldo R$ 540,00; restam 3 un | ✓ |
+| Paga as 3 restantes | saldo R$ 0,00; some da lista | ✓ |
+| Recebimento por valor (jeito antigo) | continua funcionando | ✓ |
+| `vw_permissoes_faltando` | 0 linhas | ✓ |

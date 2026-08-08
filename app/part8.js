@@ -123,24 +123,21 @@ function docRemessa(r) {
     <h4>Produtos entregues</h4>
     <table><thead><tr>
       <th style="width:8mm">#</th><th>Produto</th>
-      <th class="c" style="width:13mm">Qtd</th>
-      <th class="r" style="width:22mm">Custo un.</th>
-      <th class="r" style="width:24mm">Revenda un.</th>
-      <th class="r" style="width:26mm">Total revenda</th></tr></thead><tbody>
+      <th class="c" style="width:16mm">Qtd</th>
+      <th class="r" style="width:28mm">Revenda un.</th>
+      <th class="r" style="width:30mm">Total revenda</th></tr></thead><tbody>
       ${r.remessa_itens.map((i, n) => `<tr>
         <td>${n + 1}</td>
         <td class="prod"><b>${esc(i.produtos?.nome)}</b>
           <span>${esc(i.produtos?.codigo)}${i.produtos?.tamanho ? ' · ' + esc(i.produtos.tamanho) : ''}</span></td>
         <td class="c">${QTD(i.quantidade)}</td>
-        <td class="r">${BRLn(i.valor_custo_unitario)}</td>
         <td class="r">${BRLn(i.valor_revenda_unitario)}</td>
         <td class="r">${BRLn(N(i.quantidade) * N(i.valor_revenda_unitario))}</td></tr>`).join('')}
     </tbody><tfoot><tr>
       <td colspan="2">${r.remessa_itens.length} ${r.remessa_itens.length === 1 ? 'item' : 'itens'}</td>
-      <td class="c">${QTD(r.qtd_total_enviada)}</td><td colspan="3"></td></tr></tfoot></table>
+      <td class="c">${QTD(r.qtd_total_enviada)}</td><td colspan="2"></td></tr></tfoot></table>
 
     <div class="tot">
-      <div class="l"><span>Valor de custo</span><span>${BRLn(r.valor_custo_total)}</span></div>
       <div class="l big"><span>TOTAL DE REVENDA</span><span>${BRLn(r.valor_revenda_total)}</span></div>
     </div>
 
@@ -182,24 +179,25 @@ async function imprimirPrestacao(id) {
         rem:ri.remessas?.numero, data:ri.remessas?.data_envio, qtd:N(ri.quantidade),
         cu:N(ri.valor_custo_unitario), vr:N(ri.valor_revenda_unitario) }; });
     const rec = Object.values(recebidos);
+    const qtdBaixada = g('BAIXADO').reduce((a, e) => a + N(e.quantidade), 0);
 
     let _sn = 0;
     const sec = (t) => `<h4>${++_sn} · ${esc(t)}</h4>`;
+    /* Documento de via do revendedor: nunca mostra custo de aquisição.
+       Só quantidade e, quando faz sentido, o valor de revenda. */
     const bloco = (titulo, itens, mostrarRevenda) => itens.length ? `
       ${sec(titulo)}
       <table><thead><tr><th>Produto</th>
-        <th class="c" style="width:13mm">Qtd</th>
-        <th class="r" style="width:24mm">Custo un.</th>
-        ${mostrarRevenda ? '<th class="r" style="width:24mm">Revenda un.</th><th class="r" style="width:26mm">Total</th>'
-                         : '<th class="r" style="width:28mm">Total de custo</th>'}
+        <th class="c" style="width:18mm">Qtd</th>
+        ${mostrarRevenda ? '<th class="r" style="width:30mm">Revenda un.</th><th class="r" style="width:32mm">Total</th>'
+                         : '<th style="width:62mm">Observação</th>'}
       </tr></thead><tbody>${itens.map(e => `<tr>
         <td class="prod"><b>${esc(e.remessa_itens?.produtos?.nome || '')}</b>
           <span>${esc(e.remessa_itens?.produtos?.codigo || '')}</span></td>
         <td class="c">${QTD(e.quantidade)}</td>
-        <td class="r">${BRLn(e.custo_unitario)}</td>
         ${mostrarRevenda ? `<td class="r">${BRLn(e.valor_unitario)}</td><td class="r">${BRLn(e.valor_total)}</td>`
-                         : `<td class="r">${BRLn(N(e.quantidade) * N(e.custo_unitario))}</td>`}
-        ${e.motivo ? '' : ''}</tr>`).join('')}</tbody></table>` : '';
+                         : `<td style="font-size:9px;color:#5a5348">${esc(e.motivo || '—')}</td>`}
+        </tr>`).join('')}</tbody></table>` : '';
 
     imprimir(`<div class="doc">
       ${cabecalho('Prestação de contas', pc.numero, dBR(pc.data_acerto),
@@ -210,25 +208,25 @@ async function imprimirPrestacao(id) {
 
       ${rec.length ? `${sec('Produtos recebidos')}
       <table><thead><tr>
-        <th style="width:18mm">Remessa</th><th style="width:22mm">Data</th><th>Produto</th>
-        <th class="c" style="width:13mm">Qtd</th>
-        <th class="r" style="width:22mm">Custo un.</th>
-        <th class="r" style="width:24mm">Revenda un.</th></tr></thead><tbody>
+        <th style="width:20mm">Remessa</th><th style="width:24mm">Data</th><th>Produto</th>
+        <th class="c" style="width:16mm">Qtd</th>
+        <th class="r" style="width:28mm">Revenda un.</th></tr></thead><tbody>
         ${rec.map(x => `<tr><td>nº ${x.rem}</td><td>${dBR(x.data)}</td>
           <td class="prod"><b>${esc(x.nome)}</b><span>${esc(x.cod || '')}</span></td>
-          <td class="c">${QTD(x.qtd)}</td><td class="r">${BRLn(x.cu)}</td>
+          <td class="c">${QTD(x.qtd)}</td>
           <td class="r">${BRLn(x.vr)}</td></tr>`).join('')}
       </tbody></table>` : ''}
 
       ${bloco('Produtos vendidos', g('VENDIDO'), true)}
       ${bloco('Produtos devolvidos', g('DEVOLVIDO'), false)}
       ${bloco('Produtos perdidos ou danificados', g('PERDIDO'), false)}
+      ${bloco('Amostras de mostruário baixadas — sem cobrança', g('BAIXADO'), false)}
 
       ${emPosse.length ? `${sec('Produtos que continuam em posse')}
-      <table><thead><tr><th>Produto</th><th class="c" style="width:13mm">Qtd</th>
-        <th class="r" style="width:28mm">Custo</th><th class="r" style="width:28mm">Revenda</th></tr></thead><tbody>
+      <table><thead><tr><th>Produto</th><th class="c" style="width:18mm">Qtd</th>
+        <th class="r" style="width:34mm">Valor de revenda</th></tr></thead><tbody>
         ${emPosse.map(x => `<tr><td class="prod"><b>${esc(x.produto_nome)}</b><span>${esc(x.produto_codigo)}</span></td>
-          <td class="c">${QTD(x.qtd_em_posse)}</td><td class="r">${BRLn(x.valor_custo_total)}</td>
+          <td class="c">${QTD(x.qtd_em_posse)}</td>
           <td class="r">${BRLn(x.valor_revenda_total)}</td></tr>`).join('')}
       </tbody></table>` : ''}
 
@@ -236,6 +234,7 @@ async function imprimirPrestacao(id) {
       <div class="grid2" style="margin-bottom:3mm">
         <div class="caixa"><div class="k">Vendidos</div><div class="v">${QTD(pc.qtd_vendida)} un</div></div>
         <div class="caixa"><div class="k">Devolvidos</div><div class="v">${QTD(pc.qtd_devolvida)} un</div></div>
+        ${qtdBaixada ? `<div class="caixa"><div class="k">Baixados</div><div class="v">${QTD(qtdBaixada)} un</div></div>` : ''}
         <div class="caixa"><div class="k">Perdidos</div><div class="v">${QTD(pc.qtd_perdida)} un</div></div>
         <div class="caixa"><div class="k">Em posse</div><div class="v">${QTD(emPosse.reduce((a, x) => a + N(x.qtd_em_posse), 0))} un</div></div>
       </div>
@@ -243,8 +242,11 @@ async function imprimirPrestacao(id) {
         <div class="l"><span>Produtos vendidos</span><span>${BRLn(pc.valor_vendido)}</span></div>
         ${pc.cobrar_perdas && N(pc.valor_perdas) ? `<div class="l"><span>(+) Produtos perdidos cobrados</span><span>${BRLn(pc.valor_perdas)}</span></div>` : ''}
         <div class="l big"><span>TOTAL DESTE ACERTO</span><span>${BRLn(pc.valor_devido)}</span></div>
-        ${!pc.cobrar_perdas && N(pc.valor_perdas) ? `<div class="l" style="margin-top:2mm"><span>Perda absorvida pela empresa</span><span>${BRLn(pc.valor_perdas)}</span></div>` : ''}
       </div>
+      ${(!pc.cobrar_perdas && N(pc.valor_perdas)) || qtdBaixada ? `<div class="aviso" style="background:#f6f8f4;border-left-color:#7a9a5b;color:#3f5230">
+        ${qtdBaixada ? `<b>${QTD(qtdBaixada)} amostra(s) de mostruário baixada(s)</b> — sem cobrança: o custo fica com a empresa.` : ''}
+        ${!pc.cobrar_perdas && N(pc.valor_perdas) ? `${qtdBaixada ? '<br>' : ''}<b>Perdas não cobradas</b> — absorvidas pela empresa.` : ''}
+      </div>` : ''}
 
       ${pagosRev.length ? `${sec('Histórico de pagamentos')}
       <table><thead><tr><th style="width:24mm">Data</th><th>Forma</th>

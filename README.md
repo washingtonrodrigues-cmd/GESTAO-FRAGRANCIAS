@@ -90,6 +90,8 @@ inicial:
 | `0019` | usuário criado pelo painel do Supabase ganha perfil automaticamente |
 | `0020` | corrige a `0017`, que revogou permissão de uma função usada em índices |
 | `0021` | fecha para visitante a view de diagnóstico criada na `0020` |
+| `0022`–`0024` | mostruário se baixa como custo da empresa e nunca pode ser vendido |
+| `0025`–`0028` | recebimento do revendedor por produto e quantidade, não só por valor |
 
 ### Decisões de modelagem
 
@@ -103,6 +105,22 @@ foram descartadas e o porquê. As três que mais moldam o resto:
   quando chega mercadoria nova mais cara.
 - **Consignação não é venda.** Produto com revendedor continua sendo patrimônio da empresa; a
   receita nasce na prestação de contas, não na remessa.
+- **Mostruário não é consignação.** Amostra de demonstração não se vende: ou volta ao estoque, ou é
+  baixada como despesa da empresa. O banco recusa marcar item de mostruário como vendido.
+
+### Como o revendedor paga
+
+Revendedor acerta por peça — "hoje te pago 3 frascos" — não por parcela. O recebimento tem dois
+modos: **por produto e quantidade** (padrão para revendedor) e **por valor total** (o de sempre).
+No modo por peça o sistema calcula o valor, grava quais unidades foram pagas em
+`recebimento_itens` e abate as parcelas do documento de origem, da mais antiga para a mais nova.
+Vale nas duas origens em que o revendedor deve: venda direta e prestação de contas.
+
+### O que o revendedor vê
+
+Os documentos que vão para a mão do revendedor — recibo de entrega e prestação de contas — mostram
+**apenas o valor de revenda**. O custo de aquisição não aparece em nenhum deles; fica só nas telas
+internas e nos relatórios gerenciais.
 
 ---
 

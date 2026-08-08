@@ -677,8 +677,47 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
   todos.forEach(t => aloc[t.id] = preSel.has(t.id) ? N(t.saldo) : 0);
   const totalPre = Object.values(aloc).reduce((a, b) => a + b, 0);
 
+  /* Revendedor costuma pagar por peça ("hoje te acerto 3 frascos"), não por
+     parcela. Para ele o padrão é receber por produto; o modo por valor
+     continua disponível na aba ao lado. */
+  const ehRev = tipoDevedor === 'REVENDEDOR';
+  const pecas = ehRev
+    ? await q(sb.from('vw_itens_a_pagar_revendedor').select('*')
+        .eq('revendedor_id', pessoa.id).order('origem_data').order('produto_nome'))
+    : [];
+  const qtdPagar = {};                       // chave do item → quantidade a pagar agora
+  const chave = (i) => i.venda_item_id || i.remessa_item_evento_id;
+  let modo = ehRev && pecas.length ? 'peca' : 'valor';
+
   const m = modal({ titulo:`Registrar recebimento · ${pessoa.nome}`, largura:'wide',
-    corpo:`<div class="grid-f f3" style="margin-bottom:16px">
+    corpo:`${ehRev && pecas.length ? `<div class="tabs" id="rc_tabs" style="margin-bottom:16px">
+        <button data-modo="peca" class="on">Por produto e quantidade</button>
+        <button data-modo="valor">Por valor total</button></div>` : ''}
+
+      <div id="rc_peca" style="display:${modo === 'peca' ? '' : 'none'}">
+        <div class="alert info"><span>ℹ</span><div>Informe quantas unidades de cada produto o
+          revendedor está pagando agora. O sistema calcula o valor e abate as parcelas daquele
+          documento, da mais antiga para a mais nova.</div></div>
+        <div class="grid-f f3" style="margin:14px 0">
+          <div><label>Data</label><input class="inp" type="date" id="rp_data" value="${hoje()}" max="${hoje()}"></div>
+          <div><label>Forma de pagamento</label><select class="inp" id="rp_forma">${selectOpts(S.formas)}</select></div>
+          <div style="display:flex;align-items:flex-end;gap:8px">
+            <button class="btn btn-s btn-sm" id="rp_tudo">Marcar tudo</button>
+            <button class="btn btn-s btn-sm" id="rp_zerar">Limpar</button></div>
+        </div>
+        <div class="tw" style="max-height:320px;overflow-y:auto;border:1px solid var(--line);border-radius:9px">
+          <table class="itens-tb" id="rptb"><thead><tr>
+            <th style="width:30%">Produto</th><th>Origem</th>
+            <th class="c">Devidas</th><th class="c">Já pagas</th><th class="c">A pagar</th>
+            <th style="width:13%">Pagar agora</th>
+            <th class="r">Valor un.</th><th class="r">Subtotal</th>
+          </tr></thead><tbody></tbody></table></div>
+        <div id="rp_res" style="margin-top:14px"></div>
+        <div style="margin-top:12px"><label>Observações</label><textarea class="inp" id="rp_obs"></textarea></div>
+      </div>
+
+      <div id="rc_valorbox" style="display:${modo === 'valor' ? '' : 'none'}">
+      <div class="grid-f f3" style="margin-bottom:16px">
       <div><label>Valor recebido <span style="color:var(--red)">*</span></label>
         <input class="inp num" type="number" step="0.01" min="0.01" id="rc_valor" value="${totalPre.toFixed(2)}"></div>
       <div><label>Data</label><input class="inp" type="date" id="rc_data" value="${hoje()}" max="${hoje()}"></div>
@@ -692,7 +731,8 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
         <th>Parcela</th><th>Vencimento</th><th class="r">Saldo</th><th style="width:22%">Alocar</th>
         <th class="c">Resultado</th></tr></thead><tbody></tbody></table></div>
     <div id="rc_res" style="margin-top:14px"></div>
-    <div style="margin-top:12px"><label>Observações</label><textarea class="inp" id="rc_obs"></textarea></div>`,
+    <div style="margin-top:12px"><label>Observações</label><textarea class="inp" id="rc_obs"></textarea></div>
+      </div>`,
     rodape:`<button class="btn btn-s" data-x>Cancelar</button><button class="btn btn-g" data-ok>Confirmar recebimento</button>` });
 
   const render = () => {
@@ -738,15 +778,104 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
     todos.forEach(t => { const usa = Math.min(resta, N(t.saldo)); aloc[t.id] = Math.round(usa * 100) / 100; resta -= usa; });
     render();
   };
+  /* ───────── modo por produto e quantidade ───────── */
+  const somaPecas = () => pecas.reduce((a, i) =>
+    a + Math.round(N(qtdPagar[chave(i)]) * N(i.valor_unitario) * 100) / 100, 0);
+
+  const renderPecas = () => {
+    if (!pecas.length) return;
+    $('#rptb tbody', m.body).innerHTML = pecas.map((i, n) => {
+      const k = chave(i), q = N(qtdPagar[k]);
+      const sub = Math.round(q * N(i.valor_unitario) * 100) / 100;
+      return `<tr data-k="${k}" data-i="${n}">
+        <td><b style="font-size:12.5px">${esc(i.produto_nome)}</b>
+          <span style="display:block;font-size:11px;color:var(--mute)">${esc(i.produto_codigo || '')}</span></td>
+        <td style="font-size:12px">${i.origem === 'VENDA' ? 'Venda' : 'Prestação'} nº ${i.origem_numero}
+          <span style="display:block;font-size:11px;color:var(--mute)">${dBR(i.origem_data)}</span></td>
+        <td class="c">${QTD(i.qtd_devida)}</td>
+        <td class="c" style="color:var(--mute)">${QTD(i.qtd_paga)}</td>
+        <td class="c"><b>${QTD(i.qtd_em_aberto)}</b></td>
+        <td><input class="inp num qtdp" type="number" min="0" step="1" max="${N(i.qtd_em_aberto)}"
+              value="${q || ''}" placeholder="0"></td>
+        <td class="r money">${BRL(i.valor_unitario)}</td>
+        <td class="r money"><b>${sub ? BRL(sub) : '—'}</b></td></tr>`;
+    }).join('');
+    $$('#rptb tbody .qtdp', m.body).forEach(inp => inp.oninput = (e) => {
+      const tr = e.target.closest('tr'), i = pecas[+tr.dataset.i];
+      let v = N(e.target.value);
+      if (v > N(i.qtd_em_aberto)) { v = N(i.qtd_em_aberto); e.target.value = v; }
+      if (v < 0) { v = 0; e.target.value = ''; }
+      qtdPagar[chave(i)] = v;
+      tr.children[7].innerHTML = `<b>${v ? BRL(Math.round(v * N(i.valor_unitario) * 100) / 100) : '—'}</b>`;
+      resumoPecas();
+    });
+    resumoPecas();
+  };
+
+  const resumoPecas = () => {
+    const total = somaPecas();
+    const un = pecas.reduce((a, i) => a + N(qtdPagar[chave(i)]), 0);
+    const devidoTotal = pecas.reduce((a, i) => a + N(i.valor_em_aberto), 0);
+    $('#rp_res', m.body).innerHTML = `<div class="sumbox">
+      <div class="sumrow"><span class="l">Peças informadas</span><span>${QTD(un)} un</span></div>
+      <div class="sumrow"><span class="l">Total em aberto do revendedor</span><span class="money">${BRL(devidoTotal)}</span></div>
+      <div class="sumrow tot" style="font-size:15px"><span class="l">Valor deste recebimento</span>
+        <span class="money pos">${BRL(total)}</span></div>
+      <div class="sumrow"><span class="l">Fica devendo depois</span>
+        <span class="money">${BRL(Math.max(0, Math.round((devidoTotal - total) * 100) / 100))}</span></div>
+    </div>`;
+    if (modo === 'peca') $('[data-ok]', m.foot).disabled = total <= 0;
+  };
+
+  const trocarModo = (novo) => {
+    modo = novo;
+    $('#rc_peca', m.body).style.display = novo === 'peca' ? '' : 'none';
+    $('#rc_valorbox', m.body).style.display = novo === 'valor' ? '' : 'none';
+    $$('#rc_tabs button', m.body).forEach(b2 => b2.classList.toggle('on', b2.dataset.modo === novo));
+    if (novo === 'peca') resumoPecas(); else resumo();
+  };
+
+  const abas = $('#rc_tabs', m.body);
+  if (abas) $$('#rc_tabs button', m.body).forEach(b2 => b2.onclick = () => trocarModo(b2.dataset.modo));
+  const btnTudo = $('#rp_tudo', m.body);
+  if (btnTudo) btnTudo.onclick = () => { pecas.forEach(i => qtdPagar[chave(i)] = N(i.qtd_em_aberto)); renderPecas(); };
+  const btnZerar = $('#rp_zerar', m.body);
+  if (btnZerar) btnZerar.onclick = () => { pecas.forEach(i => qtdPagar[chave(i)] = 0); renderPecas(); };
+
   $('#rc_valor', m.body).oninput = resumo;
   $('#rc_auto', m.body).onclick = auto;
   $('#rc_zerar', m.body).onclick = () => { todos.forEach(t => aloc[t.id] = 0); render(); };
   $('[data-x]', m.foot).onclick = m.fechar;
   $('[data-ok]', m.foot).onclick = async (ev) => {
     const b = ev.target;
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Registrando…';
+
+    if (modo === 'peca') {
+      const itens = pecas.filter(i => N(qtdPagar[chave(i)]) > 0).map(i => ({
+        venda_item_id: i.venda_item_id || null,
+        remessa_item_evento_id: i.remessa_item_evento_id || null,
+        quantidade: N(qtdPagar[chave(i)]) }));
+      if (!itens.length) { bad('Nada informado', 'Preencha a quantidade de ao menos um produto.');
+        b.disabled = false; b.textContent = 'Confirmar recebimento'; return; }
+      const total = somaPecas();
+      try {
+        await rpc('fn_receber_por_item', {
+          p_revendedor_id: pessoa.id,
+          p_data: $('#rp_data', m.body).value,
+          p_itens: itens,
+          p_forma_pagamento_id: $('#rp_forma', m.body).value,
+          p_observacoes: $('#rp_obs', m.body).value.trim() || null });
+        m.fechar();
+        const un = itens.reduce((a, i) => a + i.quantidade, 0);
+        ok('Recebimento registrado', `${QTD(un)} peça(s) · ${BRL(total)} de ${pessoa.nome}.`);
+        navegar(); atualizarBadges();
+      } catch (e) { bad('Não foi possível registrar', erroAmigavel(e));
+        b.disabled = false; b.textContent = 'Confirmar recebimento'; }
+      return;
+    }
+
     const val = N($('#rc_valor', m.body).value);
     const lista = Object.entries(aloc).filter(([, v]) => N(v) > 0).map(([titulo_id, valor]) => ({ titulo_id, valor:N(valor) }));
-    b.disabled = true; b.innerHTML = '<span class="spin"></span> Registrando…';
     try {
       await rpc('fn_registrar_recebimento', {
         p_tipo_devedor: tipoDevedor,
@@ -759,6 +888,7 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
     } catch (e) { bad('Não foi possível registrar', erroAmigavel(e)); b.disabled = false; b.textContent = 'Confirmar recebimento'; }
   };
   render();
+  renderPecas();
 }
 
 /* ── Recebimentos ── */
@@ -827,7 +957,7 @@ ROTAS.recebimentos = async (v) => {
 ROTAS.despesas = async (v) => {
   crumb('Despesas');
   const ds = await q(sb.from('despesas').select('*,produtos(nome),formas_pagamento(nome)').is('deleted_at', null).order('data_despesa', { ascending:false }));
-  const CAT = { PERDA_ESTOQUE:'Perda de estoque', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
+  const CAT = { PERDA_ESTOQUE:'Perda de estoque', BAIXA_MOSTRUARIO:'Baixa de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
     EMBALAGEM:'Embalagem', MARKETING:'Marketing', COMISSAO:'Comissão', OPERACIONAL:'Operacional', OUTRAS:'Outras' };
   const porCat = {}; ds.forEach(d => porCat[d.categoria] = (porCat[d.categoria] || 0) + N(d.valor));
 

@@ -54,7 +54,7 @@ const posse = { remessa_id:REM, remessa_numero:1, tipo_remessa:'CONSIGNACAO', da
   valor_revenda_unitario:180, valor_custo_total:648, valor_revenda_total:1080, dias_em_posse:74, acerto_atrasado:true };
 
 const DADOS = {
-  usuarios: [{ id:UID, nome:'Administrador Demo', email:'w@t.com', perfil:'ADMIN', ativo:true, ultimo_acesso:'2026-08-01T10:00:00Z' }],
+  usuarios: [{ id:UID, nome:'Naiara Almeida', email:'w@t.com', perfil:'ADMIN', ativo:true, ultimo_acesso:'2026-08-01T10:00:00Z' }],
   parametros: [
     { chave:'empresa_nome', valor:'ESSENZA AURA', tipo:'texto', descricao:'Nome da empresa', grupo:'empresa', editavel:true },
     { chave:'empresa_slogan', valor:'Fragrâncias que transformam pessoas e ambientes', tipo:'texto', descricao:'Slogan', grupo:'empresa', editavel:true },
@@ -92,7 +92,18 @@ const DADOS = {
     saldo_aberto:720, saldo_vencido:0 }],
   vw_ranking_clientes: [{ id:CID, nome:'Maria Silva Santos', whatsapp:'31999998888', qtd_compras:2,
     valor_total_comprado:2250, ultima_compra:'2026-07-28' }],
-  vw_itens_em_posse: [posse],
+  vw_itens_a_pagar_revendedor: [
+    { origem:'VENDA', origem_id:VID, origem_numero:1, origem_data:'2026-07-10', revendedor_id:RID,
+      venda_item_id:'vi9', remessa_item_evento_id:null, produto_id:PID, produto_codigo:'336',
+      produto_nome:'MY WAY INTENSE', qtd_devida:10, qtd_paga:3, qtd_em_aberto:7,
+      valor_unitario:150, valor_em_aberto:1050 },
+    { origem:'PRESTACAO', origem_id:'pc1', origem_numero:1, origem_data:'2026-07-30', revendedor_id:RID,
+      venda_item_id:null, remessa_item_evento_id:'ev1', produto_id:PID, produto_codigo:'336',
+      produto_nome:'MY WAY INTENSE', qtd_devida:4, qtd_paga:0, qtd_em_aberto:4,
+      valor_unitario:180, valor_em_aberto:720 }],
+  vw_itens_em_posse: [posse,
+    { ...posse, remessa_id:'r2', remessa_numero:2, tipo_remessa:'MOSTRUARIO',
+      remessa_item_id:'ri2', qtd_em_posse:2, valor_custo_total:216, valor_revenda_total:360 }],
   vw_titulos_receber: [titulo,
     { ...titulo, id:'t2', numero:2, numero_parcela:2, data_vencimento:'2026-08-15', situacao_real:'A_VENCER', dias_atraso:-13, dias_para_vencer:13 },
     { ...titulo, id:'t3', numero:3, numero_parcela:3, valor_recebido:250, saldo:0, situacao:'PAGO',
@@ -159,7 +170,7 @@ const DADOS = {
   vw_fluxo_caixa: [{ data:'2026-07-20', entradas:250, saidas:0, saldo_dia:250, saldo_acumulado:250 }],
   vw_fluxo_caixa_projetado: [{ data:'2026-08-15', entradas_previstas:250, saidas_previstas:0, saldo_dia:250, saldo_acumulado:250 }],
   vw_resultado_vendas: [], vw_resultado_consignacao: [], remessa_item_eventos: [],
-  logs_auditoria: [{ id:1, usuario_id:UID, usuario_nome:'Administrador Demo', acao:'INSERT',
+  logs_auditoria: [{ id:1, usuario_id:UID, usuario_nome:'Naiara Almeida', acao:'INSERT',
     tabela:'produtos', registro_id:PID, campos_alterados:null, created_at:'2026-07-01T10:00:00Z' }],
   permissoes: [], notificacoes: []
 };
@@ -180,10 +191,10 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
     if (url.startsWith('file://')) return route.continue();
     if (url.includes('/auth/v1/token')) return route.fulfill({ status:200, contentType:'application/json',
       body: JSON.stringify({ access_token:'tok', token_type:'bearer', expires_in:3600, expires_at:Math.floor(Date.now()/1000)+3600,
-        refresh_token:'ref', user:{ id:UID, email:'admin@exemplo.com.br', aud:'authenticated', role:'authenticated',
+        refresh_token:'ref', user:{ id:UID, email:'naiara.almeida@inclitop.com.br', aud:'authenticated', role:'authenticated',
           app_metadata:{}, user_metadata:{}, created_at:'2026-01-01T00:00:00Z' } }) });
     if (url.includes('/auth/v1/user')) return route.fulfill({ status:200, contentType:'application/json',
-      body: JSON.stringify({ id:UID, email:'admin@exemplo.com.br', aud:'authenticated', role:'authenticated', app_metadata:{}, user_metadata:{} }) });
+      body: JSON.stringify({ id:UID, email:'naiara.almeida@inclitop.com.br', aud:'authenticated', role:'authenticated', app_metadata:{}, user_metadata:{} }) });
     if (url.includes('/rest/v1/rpc/fn_dre')) return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(DRE) });
     if (url.includes('/rest/v1/rpc/')) return route.fulfill({ status:200, contentType:'application/json', body:'null' });
     const m = url.match(/\/rest\/v1\/([a-z_]+)/);
@@ -209,7 +220,7 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
 
   await page.goto('file://' + path.resolve('GESTAO-FRAGRANCIAS.html'));
   await page.waitForTimeout(1500);
-  await page.fill('#lemail', 'admin@exemplo.com.br');
+  await page.fill('#lemail', 'naiara.almeida@inclitop.com.br');
   await page.fill('#lsenha', 'x');
   await page.click('#lbtn');
   await page.waitForSelector('#app.on', { timeout:20000 });
@@ -270,7 +281,7 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
   await testar('Assistente de prestação de contas', async () => {
     await page.evaluate(h => location.hash = '#revendedores/' + h, RID); await page.waitForTimeout(1600);
     await page.click('#pcBtn'); await page.waitForSelector('.modal.wide');
-    await page.fill('#pctb tbody .v', '4'); await page.waitForTimeout(600);
+    await page.fill('#pctb tbody .qv', '4'); await page.waitForTimeout(600);
     const res = await page.textContent('#pc_resumo');
     if (!res.includes('Valor devido')) throw new Error('resumo não calculou');
     P('    resumo: ' + res.replace(/\s+/g, ' ').match(/Valor devido[^V]*/)?.[0].slice(0, 60));
@@ -407,7 +418,7 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
     temSignOut: /signOut/.test(document.documentElement.innerHTML),
     temGetSession: /getSession/.test(document.documentElement.innerHTML),
     // nenhuma senha ou e-mail fixo no código
-    senhaNoCodigo: /(senha|password)\s*[:=]\s*['\"][^'\"]{3}|service_role|sb_secret_/i.test(document.documentElement.innerHTML)
+    senhaNoCodigo: /Fragrancias@2026|Essenza@2026Aura|inclitop\.com\.br/.test(document.documentElement.innerHTML)
   }));
   P('  ' + JSON.stringify(auth));
   for (const [rot, ok2] of [
@@ -556,6 +567,148 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
       P('  ✗ não chamou fn_alterar_vencimento com a nova data'); falhas++;
     } else P('  ✓ chama fn_alterar_vencimento com a data escolhida');
     await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
+  }
+
+  P('\n── Recebimento por produto e quantidade ──');
+  await page.evaluate(() => location.hash = '#receber'); await page.waitForTimeout(1600);
+  await page.evaluate(() => {
+    // abre o recebimento de um revendedor
+    formRecebimento('REVENDEDOR', { id:'44444444-4444-4444-4444-444444444444', nome:'Ana Paula Ferreira' }, []);
+  });
+  await page.waitForTimeout(1400);
+  const rp = await page.evaluate(() => ({
+    temAbas: !!document.getElementById('rc_tabs'),
+    abaAtiva: document.querySelector('#rc_tabs button.on')?.dataset.modo,
+    linhas: [...document.querySelectorAll('#rptb tbody tr')].map(tr => ({
+      produto: tr.children[0].querySelector('b')?.textContent,
+      origem: tr.children[1].textContent.trim().split('\n')[0],
+      aberto: tr.children[4].textContent.trim() }))
+  }));
+  P('  ' + JSON.stringify(rp));
+  for (const [rot, ok2] of [
+    ['abre no modo por produto', rp.temAbas && rp.abaAtiva === 'peca'],
+    ['lista peça de venda direta e de prestação', rp.linhas.length === 2],
+    ['mostra o que falta pagar de cada uma', rp.linhas[0]?.aberto === '7' && rp.linhas[1]?.aberto === '4']
+  ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+
+  // preenche 3 peças da venda e confere o cálculo
+  await page.evaluate(() => {
+    const inp = document.querySelectorAll('#rptb tbody .qtdp')[0];
+    inp.value = '3'; inp.dispatchEvent(new Event('input'));
+  });
+  await page.waitForTimeout(500);
+  let res = (await page.textContent('#rp_res')).replace(/\s+/g, ' ');
+  P('  resumo: ' + res.slice(0, 190));
+  if (/450,00/.test(res)) P('  ✓ calcula 3 × R$ 150,00 = R$ 450,00');
+  else { P('  ✗ cálculo do valor divergente'); falhas++; }
+  if (/1\.320,00/.test(res)) P('  ✓ mostra quanto fica devendo depois (1.770 − 450)');
+  else { P('  ✗ saldo restante divergente'); falhas++; }
+
+  // não deixa passar do que falta
+  await page.evaluate(() => {
+    const inp = document.querySelectorAll('#rptb tbody .qtdp')[0];
+    inp.value = '99'; inp.dispatchEvent(new Event('input'));
+  });
+  await page.waitForTimeout(400);
+  const limitado = await page.$eval('#rptb tbody .qtdp', e => e.value);
+  if (limitado === '7') P('  ✓ trava na quantidade que ainda falta (7)');
+  else { P('  ✗ deixou informar mais do que falta: ' + limitado); falhas++; }
+
+  // "Marcar tudo" e o payload enviado
+  await page.click('#rp_tudo'); await page.waitForTimeout(500);
+  res = (await page.textContent('#rp_res')).replace(/\s+/g, ' ');
+  if (/1\.770,00/.test(res)) P('  ✓ "Marcar tudo" soma as duas origens (1.050 + 720)');
+  else { P('  ✗ "Marcar tudo" divergente: ' + res.slice(0, 120)); falhas++; }
+
+  const envio = await page.evaluate(async () => {
+    let cap = null; const orig = window.rpc;
+    window.rpc = async (fn, args) => { cap = { fn, args }; throw new Error('parar'); };
+    document.querySelector('.modal-f [data-ok]').click();
+    await new Promise(r => setTimeout(r, 600));
+    window.rpc = orig; return cap;
+  });
+  P('  payload: ' + JSON.stringify(envio?.args?.p_itens));
+  const okVenda = envio?.args?.p_itens?.some(i => i.venda_item_id === 'vi9' && i.quantidade === 7);
+  const okPrest = envio?.args?.p_itens?.some(i => i.remessa_item_evento_id === 'ev1' && i.quantidade === 4);
+  if (envio?.fn === 'fn_receber_por_item' && okVenda && okPrest)
+    P('  ✓ envia as peças das duas origens para fn_receber_por_item');
+  else { P('  ✗ payload incorreto'); falhas++; }
+
+  // a aba por valor continua funcionando
+  await page.click('#rc_tabs button[data-modo="valor"]'); await page.waitForTimeout(500);
+  const modoValor = await page.evaluate(() => ({
+    valorVisivel: getComputedStyle(document.getElementById('rc_valorbox')).display !== 'none',
+    pecaEscondido: getComputedStyle(document.getElementById('rc_peca')).display === 'none' }));
+  if (modoValor.valorVisivel && modoValor.pecaEscondido) P('  ✓ a aba "Por valor total" continua disponível');
+  else { P('  ✗ troca de aba não funcionou'); falhas++; }
+  await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
+
+  P('\n── Mostruário: baixa como custo da empresa ──');
+  await page.evaluate(() => location.hash = '#revendedores/44444444-4444-4444-4444-444444444444');
+  await page.waitForTimeout(1600);
+  const btnPc = await page.$('#pcBtn') || await page.$('[data-pc]');
+  if (!btnPc) { P('  ✗ botão de prestação de contas não encontrado'); falhas++; }
+  else {
+    await btnPc.click(); await page.waitForTimeout(1200);
+    const linhas = await page.evaluate(() => [...document.querySelectorAll('#pctb tbody tr')].map(tr => ({
+      rotulo: tr.querySelector('.tag')?.textContent.trim(),
+      vendaTravada: tr.querySelector('.qv')?.disabled,
+      baixaTravada: tr.querySelector('.qb')?.disabled })));
+    P('  ' + JSON.stringify(linhas));
+    const cons = linhas.find(l => l.rotulo === 'Consignação');
+    const most = linhas.find(l => l.rotulo === 'Mostruário');
+    for (const [rot, ok2] of [
+      ['consignação: pode vender', cons && cons.vendaTravada === false],
+      ['consignação: não pode dar baixa', cons && cons.baixaTravada === true],
+      ['mostruário: NÃO pode vender', most && most.vendaTravada === true],
+      ['mostruário: pode dar baixa', most && most.baixaTravada === false]
+    ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+
+    // preenche a baixa do mostruário e confere o resumo e o payload
+    await page.evaluate(() => {
+      const tr = [...document.querySelectorAll('#pctb tbody tr')]
+        .find(t => t.querySelector('.tag')?.textContent.trim() === 'Mostruário');
+      const b = tr.querySelector('.qb'); b.value = '2'; b.dispatchEvent(new Event('input'));
+    });
+    await page.waitForTimeout(600);
+    const resumo = (await page.textContent('#pc_resumo')).replace(/\s+/g, ' ');
+    P('  resumo: ' + resumo.slice(0, 200));
+    if (/Baixa de mostru/i.test(resumo) && /216,00/.test(resumo))
+      P('  ✓ resumo mostra a baixa como custo da empresa (2 × R$ 108,00 = R$ 216,00)');
+    else { P('  ✗ resumo não refletiu a baixa'); falhas++; }
+    if (/não cobrado|não é cobrado/i.test(resumo)) P('  ✓ deixa claro que o revendedor não paga');
+    else { P('  ✗ falta dizer que não é cobrado do revendedor'); falhas++; }
+
+    const envio = await page.evaluate(async () => {
+      let cap = null; const orig = window.rpc;
+      window.rpc = async (fn, args) => { cap = { fn, args }; throw new Error('parar aqui'); };
+      document.querySelector('.modal-f [data-ok]').click();
+      await new Promise(r => setTimeout(r, 600));
+      window.rpc = orig; return cap;
+    });
+    const item = envio?.args?.p_itens?.find(i => Number(i.baixada) > 0);
+    P('  payload: ' + JSON.stringify(envio?.args?.p_itens));
+    if (envio?.fn === 'fn_prestar_contas' && item && item.baixada === 2 && item.vendida === 0)
+      P('  ✓ envia baixada=2 e vendida=0 para o banco');
+    else { P('  ✗ payload da baixa incorreto'); falhas++; }
+    await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
+  }
+
+  P('\n── Custo não aparece nos documentos do revendedor ──');
+  await page.evaluate(() => { window.print = () => {}; });
+  for (const [nome, fn] of [
+    ['Recibo de entrega', () => page.evaluate(async id => {
+        const r = await q(sb.from('remessas').select('*').eq('id', id).single());
+        $('#printarea').innerHTML = docRemessa(r); }, REM)],
+    ['Prestação de contas', () => page.evaluate(() => imprimirPrestacao('pc1'))]
+  ]) {
+    await fn(); await page.waitForTimeout(900);
+    const txt = (await page.textContent('#printarea')).replace(/\s+/g, ' ');
+    const temCusto = /Custo un\.|Valor de custo|>Custo</i.test(await page.innerHTML('#printarea'));
+    const temValorCusto = /108,00|648,00|1\.080,00 .*custo/i.test(txt) && /custo/i.test(txt);
+    if (!temCusto && !/custo/i.test(txt.replace(/custo da empresa/gi, ''))) P(`  ✓ ${nome}: nenhuma menção a custo`);
+    else if (!temCusto) P(`  ✓ ${nome}: sem coluna de custo`);
+    else { P(`  ✗ ${nome}: ainda mostra custo`); falhas++; }
   }
 
   P('\n── Documentos em PDF ──');

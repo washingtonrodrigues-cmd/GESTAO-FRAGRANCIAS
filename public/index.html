@@ -1270,6 +1270,7 @@ async function fichaProduto(v, id) {
   crumb(`Produtos › ${p.nome}`);
   const TIPOS = { ENTRADA_COMPRA:'Entrada por compra', SAIDA_VENDA:'Venda', SAIDA_REMESSA:'Envio a revendedor',
     RETORNO_DEVOLUCAO:'Devolução', BAIXA_VENDA_CONSIGNADA:'Venda em consignação', BAIXA_PERDA:'Perda',
+    BAIXA_MOSTRUARIO:'Baixa de mostruário',
     RESERVA:'Reserva', LIBERACAO_RESERVA:'Liberação de reserva', AJUSTE_POSITIVO:'Ajuste (entrada)',
     AJUSTE_NEGATIVO:'Ajuste (saída)', ESTORNO:'Estorno' };
 
@@ -1689,6 +1690,7 @@ ROTAS.estoque = async (v) => {
   const t = (f) => prods.reduce((a, p) => a + N(p[f]), 0);
   const TIPOS = { ENTRADA_COMPRA:'Entrada por compra', SAIDA_VENDA:'Venda', SAIDA_REMESSA:'Envio a revendedor',
     RETORNO_DEVOLUCAO:'Devolução', BAIXA_VENDA_CONSIGNADA:'Venda em consignação', BAIXA_PERDA:'Perda',
+    BAIXA_MOSTRUARIO:'Baixa de mostruário',
     RESERVA:'Reserva', LIBERACAO_RESERVA:'Liberação', AJUSTE_POSITIVO:'Ajuste (entrada)',
     AJUSTE_NEGATIVO:'Ajuste (saída)', ESTORNO:'Estorno' };
 
@@ -2370,11 +2372,14 @@ function msgCobranca(r) {
 /* ── ASSISTENTE DE PRESTAÇÃO DE CONTAS ── */
 function prestacaoContas(rev, posse) {
   if (!posse.length) return warn('Nada a acertar', 'Este revendedor não está com produtos.');
-  const linhas = posse.map(p => ({ ...p, vend:0, devo:0, perd:0, motivo:'' }));
+  const linhas = posse.map(p => ({ ...p, vend:0, devo:0, perd:0, baix:0, motivo:'',
+    mostruario: p.tipo_remessa === 'MOSTRUARIO' }));
 
   const m = modal({ titulo:`Prestação de contas · ${rev.nome}`, largura:'wide',
-    corpo:`<div class="alert info"><span>ℹ</span><div>Informe, para cada produto, quantas unidades foram
-      <b>vendidas</b>, <b>devolvidas</b> ou <b>perdidas</b>. O que sobrar continua com o revendedor.</div></div>
+    corpo:`<div class="alert info"><span>ℹ</span><div>Informe, para cada produto, o que aconteceu com cada unidade.
+      O que sobrar continua com o revendedor.<br>
+      <b>Mostruário é amostra e não se vende:</b> ou volta para o estoque, ou é
+      <b>baixado como custo da empresa</b> — nunca vira cobrança para o revendedor.</div></div>
       <div class="grid-f f3" style="margin-bottom:16px">
         <div><label>Data do acerto</label><input class="inp" type="date" id="pc_data" value="${hoje()}" max="${hoje()}"></div>
         <div><label>Condição de pagamento</label><select class="inp" id="pc_parc">
@@ -2392,40 +2397,56 @@ function prestacaoContas(rev, posse) {
       </div>
       <div class="tw" style="max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:9px">
       <table class="itens-tb" id="pctb"><thead><tr>
-        <th style="width:30%">Produto</th><th class="c">Em posse</th><th style="width:12%">Vendidas</th>
-        <th style="width:12%">Devolvidas</th><th style="width:12%">Perdidas</th><th class="c">Continua</th>
+        <th style="width:28%">Produto</th><th class="c">Em posse</th>
+        <th style="width:12%">Vendidas</th>
+        <th style="width:12%">Devolvidas</th>
+        <th style="width:12%">Perdidas</th>
+        <th style="width:12%">Baixa<br><span style="font-weight:400;font-size:10px">meu custo</span></th>
+        <th class="c">Continua</th>
         <th class="r">A receber</th></tr></thead><tbody></tbody></table></div>
       <div id="pc_resumo" style="margin-top:16px"></div>`,
     rodape:`<button class="btn btn-s" data-x>Cancelar</button>
             <button class="btn btn-p" data-ok>Confirmar acerto</button>` });
 
+  /* Mostruário não tem venda: a coluna "Vendidas" fica travada e o que
+     vale é "Baixa". Consignação é o contrário. */
   const render = () => {
     $('#pctb tbody', m.body).innerHTML = linhas.map((l, i) => {
-      const rest = N(l.qtd_em_posse) - N(l.vend) - N(l.devo) - N(l.perd);
+      const rest = N(l.qtd_em_posse) - N(l.vend) - N(l.devo) - N(l.perd) - N(l.baix);
       const inval = rest < 0;
+      const trava = (cond, titulo) => cond
+        ? `disabled title="${titulo}" style="background:#f1f5f9;cursor:not-allowed"` : '';
       return `<tr data-i="${i}" style="${inval ? 'background:var(--red-bg)' : ''}">
         <td><b style="font-size:12.5px">${esc(l.produto_nome)}</b>
-          <span style="display:block;font-size:11px;color:var(--mute)">rem. ${l.remessa_numero} · ${l.dias_em_posse}d · rev. ${BRL(l.valor_revenda_unitario)}</span></td>
+          <span style="display:block;font-size:11px;color:var(--mute)">rem. ${l.remessa_numero} ·
+            <span class="tag ${l.mostruario ? 'a' : 'v'}" style="font-size:9.5px">${l.mostruario ? 'Mostruário' : 'Consignação'}</span>
+            · ${l.dias_em_posse}d${l.mostruario ? '' : ' · rev. ' + BRL(l.valor_revenda_unitario)}</span></td>
         <td class="c"><b>${QTD(l.qtd_em_posse)}</b></td>
-        <td><input class="inp num v" type="number" min="0" step="1" max="${l.qtd_em_posse}" value="${l.vend || ''}" placeholder="0"></td>
-        <td><input class="inp num d" type="number" min="0" step="1" max="${l.qtd_em_posse}" value="${l.devo || ''}" placeholder="0"></td>
-        <td><input class="inp num p" type="number" min="0" step="1" max="${l.qtd_em_posse}" value="${l.perd || ''}" placeholder="0"></td>
+        <td><input class="inp num qv" type="number" min="0" step="1" max="${l.qtd_em_posse}"
+              value="${l.vend || ''}" placeholder="${l.mostruario ? '—' : '0'}"
+              ${trava(l.mostruario, 'Mostruário é amostra e não pode ser vendido. Para vender, devolva ao estoque e registre uma venda normal.')}></td>
+        <td><input class="inp num qd" type="number" min="0" step="1" max="${l.qtd_em_posse}" value="${l.devo || ''}" placeholder="0"></td>
+        <td><input class="inp num qp" type="number" min="0" step="1" max="${l.qtd_em_posse}" value="${l.perd || ''}" placeholder="0"></td>
+        <td><input class="inp num qb" type="number" min="0" step="1" max="${l.qtd_em_posse}"
+              value="${l.baix || ''}" placeholder="${l.mostruario ? '0' : '—'}"
+              ${trava(!l.mostruario, 'A baixa como custo da empresa vale só para mostruário. Em consignação use devolvido ou perdido.')}></td>
         <td class="c ${inval ? 'neg' : ''}"><b>${QTD(rest)}</b></td>
         <td class="r money">${BRL(N(l.vend) * N(l.valor_revenda_unitario))}</td></tr>`;
     }).join('');
     $$('#pctb tbody tr', m.body).forEach(tr => {
       const i = +tr.dataset.i;
-      $('.v', tr).oninput = e => { linhas[i].vend = N(e.target.value); resumo(); atualizaLinha(tr, i); };
-      $('.d', tr).oninput = e => { linhas[i].devo = N(e.target.value); resumo(); atualizaLinha(tr, i); };
-      $('.p', tr).oninput = e => { linhas[i].perd = N(e.target.value); resumo(); atualizaLinha(tr, i); };
+      $('.qv', tr).oninput = e => { linhas[i].vend = N(e.target.value); resumo(); atualizaLinha(tr, i); };
+      $('.qd', tr).oninput = e => { linhas[i].devo = N(e.target.value); resumo(); atualizaLinha(tr, i); };
+      $('.qp', tr).oninput = e => { linhas[i].perd = N(e.target.value); resumo(); atualizaLinha(tr, i); };
+      $('.qb', tr).oninput = e => { linhas[i].baix = N(e.target.value); resumo(); atualizaLinha(tr, i); };
     });
     resumo();
   };
   const atualizaLinha = (tr, i) => {
-    const l = linhas[i], rest = N(l.qtd_em_posse) - N(l.vend) - N(l.devo) - N(l.perd);
+    const l = linhas[i], rest = N(l.qtd_em_posse) - N(l.vend) - N(l.devo) - N(l.perd) - N(l.baix);
     tr.style.background = rest < 0 ? 'var(--red-bg)' : '';
-    tr.children[5].innerHTML = `<b class="${rest < 0 ? 'neg' : ''}">${QTD(rest)}</b>`;
-    tr.children[6].textContent = BRL(N(l.vend) * N(l.valor_revenda_unitario));
+    tr.children[6].innerHTML = `<b class="${rest < 0 ? 'neg' : ''}">${QTD(rest)}</b>`;
+    tr.children[7].textContent = BRL(N(l.vend) * N(l.valor_revenda_unitario));
   };
 
   /* Sugere o vencimento enquanto o usuário não escolher uma data própria. */
@@ -2446,27 +2467,31 @@ function prestacaoContas(rev, posse) {
 
   const resumo = () => {
     sincVenc();
-    let qv = 0, qd = 0, qp = 0, vv = 0, cv = 0, vd = 0, vp = 0, rest = 0, cr = 0, inval = false;
+    let qv = 0, qd = 0, qp = 0, qb = 0, vv = 0, cv = 0, vd = 0, vp = 0, vb = 0,
+        rest = 0, cr = 0, inval = false;
     linhas.forEach(l => {
-      const r2 = N(l.qtd_em_posse) - N(l.vend) - N(l.devo) - N(l.perd);
+      const r2 = N(l.qtd_em_posse) - N(l.vend) - N(l.devo) - N(l.perd) - N(l.baix);
       if (r2 < 0) inval = true;
-      qv += N(l.vend); qd += N(l.devo); qp += N(l.perd); rest += Math.max(r2, 0);
+      qv += N(l.vend); qd += N(l.devo); qp += N(l.perd); qb += N(l.baix); rest += Math.max(r2, 0);
       vv += N(l.vend) * N(l.valor_revenda_unitario);
       cv += N(l.vend) * N(l.valor_custo_unitario);
       vd += N(l.devo) * N(l.valor_custo_unitario);
       vp += N(l.perd) * N(l.valor_custo_unitario);
+      vb += N(l.baix) * N(l.valor_custo_unitario);
       cr += Math.max(r2, 0) * N(l.valor_custo_unitario);
     });
     const cobra = $('#pc_cobra', m.body)?.checked ?? true;
     const devido = vv + (cobra ? vp : 0);
     const lucro = vv - cv;
-    const liq = lucro - (cobra ? 0 : vp);
+    const liq = lucro - (cobra ? 0 : vp) - vb;
     $('#pc_resumo', m.body).innerHTML = `
       ${inval ? '<div class="alert bad"><span>⚠</span><div>Alguma linha soma mais do que o revendedor tem em posse. Corrija antes de confirmar.</div></div>' : ''}
       <div class="sumbox">
         <div class="sumrow"><span class="l">Vendidos</span><span>${QTD(qv)} un · revenda <b class="money">${BRL(vv)}</b> · custo ${BRL(cv)}</span></div>
         <div class="sumrow"><span class="l">Devolvidos</span><span>${QTD(qd)} un · volta ao estoque ${BRL(vd)} de custo</span></div>
         <div class="sumrow"><span class="l">Perdidos</span><span>${QTD(qp)} un · custo ${BRL(vp)}</span></div>
+        ${qb > 0 ? `<div class="sumrow"><span class="l">Baixa de mostruário</span>
+          <span>${QTD(qb)} un · <b class="money neg">${BRL(vb)}</b> de custo seu — não cobrado</span></div>` : ''}
         <div class="sumrow"><span class="l">Continua em posse</span><span>${QTD(rest)} un · custo ${BRL(cr)}</span></div>
         <div class="sumrow" style="border-top:1px solid var(--line);margin-top:6px;padding-top:9px">
           <span class="l">Produtos vendidos</span><span class="money">${BRL(vv)}</span></div>
@@ -2474,14 +2499,18 @@ function prestacaoContas(rev, posse) {
         <div class="sumrow tot"><span class="l">Valor devido</span><span class="money">${BRL(devido)}</span></div>
         <div class="sumrow" style="margin-top:8px"><span class="l">Lucro bruto do acerto</span>
           <span class="money pos">${BRL(lucro)}${vv ? ` (${PCT(lucro / vv * 100)})` : ''}</span></div>
-        ${!cobra && vp > 0 ? `<div class="sumrow"><span class="l">Perda absorvida pela empresa</span><span class="money neg">${BRL(vp)}</span></div>
-        <div class="sumrow"><span class="l">Resultado líquido</span><span class="money">${BRL(liq)}</span></div>` : ''}
+        ${!cobra && vp > 0 ? `<div class="sumrow"><span class="l">Perda absorvida pela empresa</span><span class="money neg">${BRL(vp)}</span></div>` : ''}
+        ${qb > 0 ? `<div class="sumrow"><span class="l">(−) Baixa de mostruário</span><span class="money neg">${BRL(vb)}</span></div>` : ''}
+        ${(!cobra && vp > 0) || qb > 0 ? `<div class="sumrow"><span class="l">Resultado líquido do acerto</span><span class="money">${BRL(liq)}</span></div>` : ''}
       </div>
+      ${qb > 0 ? `<div class="alert info" style="margin-top:12px"><span>ℹ</span><div>
+        A baixa de mostruário vira <b>despesa da empresa</b> de ${BRL(vb)}, na categoria
+        “Baixa de mostruário”. O revendedor não é cobrado por ela.</div></div>` : ''}
       ${vp > 0 ? `<label class="chk" style="margin-top:12px"><input type="checkbox" id="pc_cobra" ${cobra ? 'checked' : ''}>
         Cobrar do revendedor os produtos perdidos (${BRL(vp)})</label>
         <div class="hint">Desmarcado, a perda vira despesa da empresa na categoria “Perda de estoque”.</div>` : ''}`;
     const cb = $('#pc_cobra', m.body); if (cb) cb.onchange = resumo;
-    $('[data-ok]', m.foot).disabled = inval || (qv + qd + qp) === 0;
+    $('[data-ok]', m.foot).disabled = inval || (qv + qd + qp + qb) === 0;
   };
 
   $('[data-x]', m.foot).onclick = m.fechar;
@@ -2491,9 +2520,11 @@ function prestacaoContas(rev, posse) {
   $('#pc_venc', m.body).onchange = (e) => { e.target.dataset.tocado = '1'; resumo(); };
   $('[data-ok]', m.foot).onclick = async (ev) => {
     const b = ev.target;
-    const itens = linhas.filter(l => N(l.vend) + N(l.devo) + N(l.perd) > 0).map(l => ({
-      remessa_item_id: l.remessa_item_id, vendida:N(l.vend), devolvida:N(l.devo), perdida:N(l.perd),
-      motivo: N(l.perd) > 0 ? (l.motivo || 'Perda informada na prestação de contas') : null }));
+    const itens = linhas.filter(l => N(l.vend) + N(l.devo) + N(l.perd) + N(l.baix) > 0).map(l => ({
+      remessa_item_id: l.remessa_item_id, vendida:N(l.vend), devolvida:N(l.devo),
+      perdida:N(l.perd), baixada:N(l.baix),
+      motivo: N(l.baix) > 0 ? (l.motivo || 'Amostra de mostruário baixada como custo da empresa')
+            : N(l.perd) > 0 ? (l.motivo || 'Perda informada na prestação de contas') : null }));
     if (!itens.length) return bad('Nada informado', 'Preencha ao menos uma quantidade.');
     if (!$('#pc_venc', m.body).value) return bad('Vencimento em branco', 'Informe a data de vencimento.');
     if ($('#pc_venc', m.body).value < $('#pc_data', m.body).value)
@@ -3471,8 +3502,47 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
   todos.forEach(t => aloc[t.id] = preSel.has(t.id) ? N(t.saldo) : 0);
   const totalPre = Object.values(aloc).reduce((a, b) => a + b, 0);
 
+  /* Revendedor costuma pagar por peça ("hoje te acerto 3 frascos"), não por
+     parcela. Para ele o padrão é receber por produto; o modo por valor
+     continua disponível na aba ao lado. */
+  const ehRev = tipoDevedor === 'REVENDEDOR';
+  const pecas = ehRev
+    ? await q(sb.from('vw_itens_a_pagar_revendedor').select('*')
+        .eq('revendedor_id', pessoa.id).order('origem_data').order('produto_nome'))
+    : [];
+  const qtdPagar = {};                       // chave do item → quantidade a pagar agora
+  const chave = (i) => i.venda_item_id || i.remessa_item_evento_id;
+  let modo = ehRev && pecas.length ? 'peca' : 'valor';
+
   const m = modal({ titulo:`Registrar recebimento · ${pessoa.nome}`, largura:'wide',
-    corpo:`<div class="grid-f f3" style="margin-bottom:16px">
+    corpo:`${ehRev && pecas.length ? `<div class="tabs" id="rc_tabs" style="margin-bottom:16px">
+        <button data-modo="peca" class="on">Por produto e quantidade</button>
+        <button data-modo="valor">Por valor total</button></div>` : ''}
+
+      <div id="rc_peca" style="display:${modo === 'peca' ? '' : 'none'}">
+        <div class="alert info"><span>ℹ</span><div>Informe quantas unidades de cada produto o
+          revendedor está pagando agora. O sistema calcula o valor e abate as parcelas daquele
+          documento, da mais antiga para a mais nova.</div></div>
+        <div class="grid-f f3" style="margin:14px 0">
+          <div><label>Data</label><input class="inp" type="date" id="rp_data" value="${hoje()}" max="${hoje()}"></div>
+          <div><label>Forma de pagamento</label><select class="inp" id="rp_forma">${selectOpts(S.formas)}</select></div>
+          <div style="display:flex;align-items:flex-end;gap:8px">
+            <button class="btn btn-s btn-sm" id="rp_tudo">Marcar tudo</button>
+            <button class="btn btn-s btn-sm" id="rp_zerar">Limpar</button></div>
+        </div>
+        <div class="tw" style="max-height:320px;overflow-y:auto;border:1px solid var(--line);border-radius:9px">
+          <table class="itens-tb" id="rptb"><thead><tr>
+            <th style="width:30%">Produto</th><th>Origem</th>
+            <th class="c">Devidas</th><th class="c">Já pagas</th><th class="c">A pagar</th>
+            <th style="width:13%">Pagar agora</th>
+            <th class="r">Valor un.</th><th class="r">Subtotal</th>
+          </tr></thead><tbody></tbody></table></div>
+        <div id="rp_res" style="margin-top:14px"></div>
+        <div style="margin-top:12px"><label>Observações</label><textarea class="inp" id="rp_obs"></textarea></div>
+      </div>
+
+      <div id="rc_valorbox" style="display:${modo === 'valor' ? '' : 'none'}">
+      <div class="grid-f f3" style="margin-bottom:16px">
       <div><label>Valor recebido <span style="color:var(--red)">*</span></label>
         <input class="inp num" type="number" step="0.01" min="0.01" id="rc_valor" value="${totalPre.toFixed(2)}"></div>
       <div><label>Data</label><input class="inp" type="date" id="rc_data" value="${hoje()}" max="${hoje()}"></div>
@@ -3486,7 +3556,8 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
         <th>Parcela</th><th>Vencimento</th><th class="r">Saldo</th><th style="width:22%">Alocar</th>
         <th class="c">Resultado</th></tr></thead><tbody></tbody></table></div>
     <div id="rc_res" style="margin-top:14px"></div>
-    <div style="margin-top:12px"><label>Observações</label><textarea class="inp" id="rc_obs"></textarea></div>`,
+    <div style="margin-top:12px"><label>Observações</label><textarea class="inp" id="rc_obs"></textarea></div>
+      </div>`,
     rodape:`<button class="btn btn-s" data-x>Cancelar</button><button class="btn btn-g" data-ok>Confirmar recebimento</button>` });
 
   const render = () => {
@@ -3532,15 +3603,104 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
     todos.forEach(t => { const usa = Math.min(resta, N(t.saldo)); aloc[t.id] = Math.round(usa * 100) / 100; resta -= usa; });
     render();
   };
+  /* ───────── modo por produto e quantidade ───────── */
+  const somaPecas = () => pecas.reduce((a, i) =>
+    a + Math.round(N(qtdPagar[chave(i)]) * N(i.valor_unitario) * 100) / 100, 0);
+
+  const renderPecas = () => {
+    if (!pecas.length) return;
+    $('#rptb tbody', m.body).innerHTML = pecas.map((i, n) => {
+      const k = chave(i), q = N(qtdPagar[k]);
+      const sub = Math.round(q * N(i.valor_unitario) * 100) / 100;
+      return `<tr data-k="${k}" data-i="${n}">
+        <td><b style="font-size:12.5px">${esc(i.produto_nome)}</b>
+          <span style="display:block;font-size:11px;color:var(--mute)">${esc(i.produto_codigo || '')}</span></td>
+        <td style="font-size:12px">${i.origem === 'VENDA' ? 'Venda' : 'Prestação'} nº ${i.origem_numero}
+          <span style="display:block;font-size:11px;color:var(--mute)">${dBR(i.origem_data)}</span></td>
+        <td class="c">${QTD(i.qtd_devida)}</td>
+        <td class="c" style="color:var(--mute)">${QTD(i.qtd_paga)}</td>
+        <td class="c"><b>${QTD(i.qtd_em_aberto)}</b></td>
+        <td><input class="inp num qtdp" type="number" min="0" step="1" max="${N(i.qtd_em_aberto)}"
+              value="${q || ''}" placeholder="0"></td>
+        <td class="r money">${BRL(i.valor_unitario)}</td>
+        <td class="r money"><b>${sub ? BRL(sub) : '—'}</b></td></tr>`;
+    }).join('');
+    $$('#rptb tbody .qtdp', m.body).forEach(inp => inp.oninput = (e) => {
+      const tr = e.target.closest('tr'), i = pecas[+tr.dataset.i];
+      let v = N(e.target.value);
+      if (v > N(i.qtd_em_aberto)) { v = N(i.qtd_em_aberto); e.target.value = v; }
+      if (v < 0) { v = 0; e.target.value = ''; }
+      qtdPagar[chave(i)] = v;
+      tr.children[7].innerHTML = `<b>${v ? BRL(Math.round(v * N(i.valor_unitario) * 100) / 100) : '—'}</b>`;
+      resumoPecas();
+    });
+    resumoPecas();
+  };
+
+  const resumoPecas = () => {
+    const total = somaPecas();
+    const un = pecas.reduce((a, i) => a + N(qtdPagar[chave(i)]), 0);
+    const devidoTotal = pecas.reduce((a, i) => a + N(i.valor_em_aberto), 0);
+    $('#rp_res', m.body).innerHTML = `<div class="sumbox">
+      <div class="sumrow"><span class="l">Peças informadas</span><span>${QTD(un)} un</span></div>
+      <div class="sumrow"><span class="l">Total em aberto do revendedor</span><span class="money">${BRL(devidoTotal)}</span></div>
+      <div class="sumrow tot" style="font-size:15px"><span class="l">Valor deste recebimento</span>
+        <span class="money pos">${BRL(total)}</span></div>
+      <div class="sumrow"><span class="l">Fica devendo depois</span>
+        <span class="money">${BRL(Math.max(0, Math.round((devidoTotal - total) * 100) / 100))}</span></div>
+    </div>`;
+    if (modo === 'peca') $('[data-ok]', m.foot).disabled = total <= 0;
+  };
+
+  const trocarModo = (novo) => {
+    modo = novo;
+    $('#rc_peca', m.body).style.display = novo === 'peca' ? '' : 'none';
+    $('#rc_valorbox', m.body).style.display = novo === 'valor' ? '' : 'none';
+    $$('#rc_tabs button', m.body).forEach(b2 => b2.classList.toggle('on', b2.dataset.modo === novo));
+    if (novo === 'peca') resumoPecas(); else resumo();
+  };
+
+  const abas = $('#rc_tabs', m.body);
+  if (abas) $$('#rc_tabs button', m.body).forEach(b2 => b2.onclick = () => trocarModo(b2.dataset.modo));
+  const btnTudo = $('#rp_tudo', m.body);
+  if (btnTudo) btnTudo.onclick = () => { pecas.forEach(i => qtdPagar[chave(i)] = N(i.qtd_em_aberto)); renderPecas(); };
+  const btnZerar = $('#rp_zerar', m.body);
+  if (btnZerar) btnZerar.onclick = () => { pecas.forEach(i => qtdPagar[chave(i)] = 0); renderPecas(); };
+
   $('#rc_valor', m.body).oninput = resumo;
   $('#rc_auto', m.body).onclick = auto;
   $('#rc_zerar', m.body).onclick = () => { todos.forEach(t => aloc[t.id] = 0); render(); };
   $('[data-x]', m.foot).onclick = m.fechar;
   $('[data-ok]', m.foot).onclick = async (ev) => {
     const b = ev.target;
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Registrando…';
+
+    if (modo === 'peca') {
+      const itens = pecas.filter(i => N(qtdPagar[chave(i)]) > 0).map(i => ({
+        venda_item_id: i.venda_item_id || null,
+        remessa_item_evento_id: i.remessa_item_evento_id || null,
+        quantidade: N(qtdPagar[chave(i)]) }));
+      if (!itens.length) { bad('Nada informado', 'Preencha a quantidade de ao menos um produto.');
+        b.disabled = false; b.textContent = 'Confirmar recebimento'; return; }
+      const total = somaPecas();
+      try {
+        await rpc('fn_receber_por_item', {
+          p_revendedor_id: pessoa.id,
+          p_data: $('#rp_data', m.body).value,
+          p_itens: itens,
+          p_forma_pagamento_id: $('#rp_forma', m.body).value,
+          p_observacoes: $('#rp_obs', m.body).value.trim() || null });
+        m.fechar();
+        const un = itens.reduce((a, i) => a + i.quantidade, 0);
+        ok('Recebimento registrado', `${QTD(un)} peça(s) · ${BRL(total)} de ${pessoa.nome}.`);
+        navegar(); atualizarBadges();
+      } catch (e) { bad('Não foi possível registrar', erroAmigavel(e));
+        b.disabled = false; b.textContent = 'Confirmar recebimento'; }
+      return;
+    }
+
     const val = N($('#rc_valor', m.body).value);
     const lista = Object.entries(aloc).filter(([, v]) => N(v) > 0).map(([titulo_id, valor]) => ({ titulo_id, valor:N(valor) }));
-    b.disabled = true; b.innerHTML = '<span class="spin"></span> Registrando…';
     try {
       await rpc('fn_registrar_recebimento', {
         p_tipo_devedor: tipoDevedor,
@@ -3553,6 +3713,7 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
     } catch (e) { bad('Não foi possível registrar', erroAmigavel(e)); b.disabled = false; b.textContent = 'Confirmar recebimento'; }
   };
   render();
+  renderPecas();
 }
 
 /* ── Recebimentos ── */
@@ -3621,7 +3782,7 @@ ROTAS.recebimentos = async (v) => {
 ROTAS.despesas = async (v) => {
   crumb('Despesas');
   const ds = await q(sb.from('despesas').select('*,produtos(nome),formas_pagamento(nome)').is('deleted_at', null).order('data_despesa', { ascending:false }));
-  const CAT = { PERDA_ESTOQUE:'Perda de estoque', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
+  const CAT = { PERDA_ESTOQUE:'Perda de estoque', BAIXA_MOSTRUARIO:'Baixa de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
     EMBALAGEM:'Embalagem', MARKETING:'Marketing', COMISSAO:'Comissão', OPERACIONAL:'Operacional', OUTRAS:'Outras' };
   const porCat = {}; ds.forEach(d => porCat[d.categoria] = (porCat[d.categoria] || 0) + N(d.valor));
 
@@ -3750,7 +3911,7 @@ ROTAS.financeiro = async (v) => {
     ]);
     const d = Array.isArray(dreArr) ? dreArr[0] : dreArr;
     ultimoDre = { d, i, f };
-    const CAT = { PERDA_ESTOQUE:'Perdas de estoque', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxas de pagamento',
+    const CAT = { PERDA_ESTOQUE:'Perdas de estoque', BAIXA_MOSTRUARIO:'Baixa de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxas de pagamento',
       EMBALAGEM:'Embalagem', MARKETING:'Marketing', COMISSAO:'Comissões', OPERACIONAL:'Operacional', OUTRAS:'Outras' };
     const porCat = {}; desp.forEach(x => porCat[x.categoria] = (porCat[x.categoria] || 0) + N(x.valor));
     const confere = Math.abs(N(d.lucro_recebido) + N(d.lucro_a_receber) - N(d.lucro_bruto)) < 0.05;
@@ -4121,7 +4282,7 @@ async function montarRelatorio(id, i, f) {
     }
     case 'despesas': {
       const l = await q(sb.from('despesas').select('*').is('deleted_at', null).gte('data_despesa', i).lte('data_despesa', f).order('data_despesa', { ascending:false }));
-      const CAT = { PERDA_ESTOQUE:'Perda de estoque', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
+      const CAT = { PERDA_ESTOQUE:'Perda de estoque', BAIXA_MOSTRUARIO:'Baixa de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
         EMBALAGEM:'Embalagem', MARKETING:'Marketing', COMISSAO:'Comissão', OPERACIONAL:'Operacional', OUTRAS:'Outras' };
       return { linhas:l, colunas:[
         { t:'Nº', v:x => x.numero }, { t:'Data', v:x => dBR(x.data_despesa) },
@@ -4477,24 +4638,21 @@ function docRemessa(r) {
     <h4>Produtos entregues</h4>
     <table><thead><tr>
       <th style="width:8mm">#</th><th>Produto</th>
-      <th class="c" style="width:13mm">Qtd</th>
-      <th class="r" style="width:22mm">Custo un.</th>
-      <th class="r" style="width:24mm">Revenda un.</th>
-      <th class="r" style="width:26mm">Total revenda</th></tr></thead><tbody>
+      <th class="c" style="width:16mm">Qtd</th>
+      <th class="r" style="width:28mm">Revenda un.</th>
+      <th class="r" style="width:30mm">Total revenda</th></tr></thead><tbody>
       ${r.remessa_itens.map((i, n) => `<tr>
         <td>${n + 1}</td>
         <td class="prod"><b>${esc(i.produtos?.nome)}</b>
           <span>${esc(i.produtos?.codigo)}${i.produtos?.tamanho ? ' · ' + esc(i.produtos.tamanho) : ''}</span></td>
         <td class="c">${QTD(i.quantidade)}</td>
-        <td class="r">${BRLn(i.valor_custo_unitario)}</td>
         <td class="r">${BRLn(i.valor_revenda_unitario)}</td>
         <td class="r">${BRLn(N(i.quantidade) * N(i.valor_revenda_unitario))}</td></tr>`).join('')}
     </tbody><tfoot><tr>
       <td colspan="2">${r.remessa_itens.length} ${r.remessa_itens.length === 1 ? 'item' : 'itens'}</td>
-      <td class="c">${QTD(r.qtd_total_enviada)}</td><td colspan="3"></td></tr></tfoot></table>
+      <td class="c">${QTD(r.qtd_total_enviada)}</td><td colspan="2"></td></tr></tfoot></table>
 
     <div class="tot">
-      <div class="l"><span>Valor de custo</span><span>${BRLn(r.valor_custo_total)}</span></div>
       <div class="l big"><span>TOTAL DE REVENDA</span><span>${BRLn(r.valor_revenda_total)}</span></div>
     </div>
 
@@ -4536,24 +4694,25 @@ async function imprimirPrestacao(id) {
         rem:ri.remessas?.numero, data:ri.remessas?.data_envio, qtd:N(ri.quantidade),
         cu:N(ri.valor_custo_unitario), vr:N(ri.valor_revenda_unitario) }; });
     const rec = Object.values(recebidos);
+    const qtdBaixada = g('BAIXADO').reduce((a, e) => a + N(e.quantidade), 0);
 
     let _sn = 0;
     const sec = (t) => `<h4>${++_sn} · ${esc(t)}</h4>`;
+    /* Documento de via do revendedor: nunca mostra custo de aquisição.
+       Só quantidade e, quando faz sentido, o valor de revenda. */
     const bloco = (titulo, itens, mostrarRevenda) => itens.length ? `
       ${sec(titulo)}
       <table><thead><tr><th>Produto</th>
-        <th class="c" style="width:13mm">Qtd</th>
-        <th class="r" style="width:24mm">Custo un.</th>
-        ${mostrarRevenda ? '<th class="r" style="width:24mm">Revenda un.</th><th class="r" style="width:26mm">Total</th>'
-                         : '<th class="r" style="width:28mm">Total de custo</th>'}
+        <th class="c" style="width:18mm">Qtd</th>
+        ${mostrarRevenda ? '<th class="r" style="width:30mm">Revenda un.</th><th class="r" style="width:32mm">Total</th>'
+                         : '<th style="width:62mm">Observação</th>'}
       </tr></thead><tbody>${itens.map(e => `<tr>
         <td class="prod"><b>${esc(e.remessa_itens?.produtos?.nome || '')}</b>
           <span>${esc(e.remessa_itens?.produtos?.codigo || '')}</span></td>
         <td class="c">${QTD(e.quantidade)}</td>
-        <td class="r">${BRLn(e.custo_unitario)}</td>
         ${mostrarRevenda ? `<td class="r">${BRLn(e.valor_unitario)}</td><td class="r">${BRLn(e.valor_total)}</td>`
-                         : `<td class="r">${BRLn(N(e.quantidade) * N(e.custo_unitario))}</td>`}
-        ${e.motivo ? '' : ''}</tr>`).join('')}</tbody></table>` : '';
+                         : `<td style="font-size:9px;color:#5a5348">${esc(e.motivo || '—')}</td>`}
+        </tr>`).join('')}</tbody></table>` : '';
 
     imprimir(`<div class="doc">
       ${cabecalho('Prestação de contas', pc.numero, dBR(pc.data_acerto),
@@ -4564,25 +4723,25 @@ async function imprimirPrestacao(id) {
 
       ${rec.length ? `${sec('Produtos recebidos')}
       <table><thead><tr>
-        <th style="width:18mm">Remessa</th><th style="width:22mm">Data</th><th>Produto</th>
-        <th class="c" style="width:13mm">Qtd</th>
-        <th class="r" style="width:22mm">Custo un.</th>
-        <th class="r" style="width:24mm">Revenda un.</th></tr></thead><tbody>
+        <th style="width:20mm">Remessa</th><th style="width:24mm">Data</th><th>Produto</th>
+        <th class="c" style="width:16mm">Qtd</th>
+        <th class="r" style="width:28mm">Revenda un.</th></tr></thead><tbody>
         ${rec.map(x => `<tr><td>nº ${x.rem}</td><td>${dBR(x.data)}</td>
           <td class="prod"><b>${esc(x.nome)}</b><span>${esc(x.cod || '')}</span></td>
-          <td class="c">${QTD(x.qtd)}</td><td class="r">${BRLn(x.cu)}</td>
+          <td class="c">${QTD(x.qtd)}</td>
           <td class="r">${BRLn(x.vr)}</td></tr>`).join('')}
       </tbody></table>` : ''}
 
       ${bloco('Produtos vendidos', g('VENDIDO'), true)}
       ${bloco('Produtos devolvidos', g('DEVOLVIDO'), false)}
       ${bloco('Produtos perdidos ou danificados', g('PERDIDO'), false)}
+      ${bloco('Amostras de mostruário baixadas — sem cobrança', g('BAIXADO'), false)}
 
       ${emPosse.length ? `${sec('Produtos que continuam em posse')}
-      <table><thead><tr><th>Produto</th><th class="c" style="width:13mm">Qtd</th>
-        <th class="r" style="width:28mm">Custo</th><th class="r" style="width:28mm">Revenda</th></tr></thead><tbody>
+      <table><thead><tr><th>Produto</th><th class="c" style="width:18mm">Qtd</th>
+        <th class="r" style="width:34mm">Valor de revenda</th></tr></thead><tbody>
         ${emPosse.map(x => `<tr><td class="prod"><b>${esc(x.produto_nome)}</b><span>${esc(x.produto_codigo)}</span></td>
-          <td class="c">${QTD(x.qtd_em_posse)}</td><td class="r">${BRLn(x.valor_custo_total)}</td>
+          <td class="c">${QTD(x.qtd_em_posse)}</td>
           <td class="r">${BRLn(x.valor_revenda_total)}</td></tr>`).join('')}
       </tbody></table>` : ''}
 
@@ -4590,6 +4749,7 @@ async function imprimirPrestacao(id) {
       <div class="grid2" style="margin-bottom:3mm">
         <div class="caixa"><div class="k">Vendidos</div><div class="v">${QTD(pc.qtd_vendida)} un</div></div>
         <div class="caixa"><div class="k">Devolvidos</div><div class="v">${QTD(pc.qtd_devolvida)} un</div></div>
+        ${qtdBaixada ? `<div class="caixa"><div class="k">Baixados</div><div class="v">${QTD(qtdBaixada)} un</div></div>` : ''}
         <div class="caixa"><div class="k">Perdidos</div><div class="v">${QTD(pc.qtd_perdida)} un</div></div>
         <div class="caixa"><div class="k">Em posse</div><div class="v">${QTD(emPosse.reduce((a, x) => a + N(x.qtd_em_posse), 0))} un</div></div>
       </div>
@@ -4597,8 +4757,11 @@ async function imprimirPrestacao(id) {
         <div class="l"><span>Produtos vendidos</span><span>${BRLn(pc.valor_vendido)}</span></div>
         ${pc.cobrar_perdas && N(pc.valor_perdas) ? `<div class="l"><span>(+) Produtos perdidos cobrados</span><span>${BRLn(pc.valor_perdas)}</span></div>` : ''}
         <div class="l big"><span>TOTAL DESTE ACERTO</span><span>${BRLn(pc.valor_devido)}</span></div>
-        ${!pc.cobrar_perdas && N(pc.valor_perdas) ? `<div class="l" style="margin-top:2mm"><span>Perda absorvida pela empresa</span><span>${BRLn(pc.valor_perdas)}</span></div>` : ''}
       </div>
+      ${(!pc.cobrar_perdas && N(pc.valor_perdas)) || qtdBaixada ? `<div class="aviso" style="background:#f6f8f4;border-left-color:#7a9a5b;color:#3f5230">
+        ${qtdBaixada ? `<b>${QTD(qtdBaixada)} amostra(s) de mostruário baixada(s)</b> — sem cobrança: o custo fica com a empresa.` : ''}
+        ${!pc.cobrar_perdas && N(pc.valor_perdas) ? `${qtdBaixada ? '<br>' : ''}<b>Perdas não cobradas</b> — absorvidas pela empresa.` : ''}
+      </div>` : ''}
 
       ${pagosRev.length ? `${sec('Histórico de pagamentos')}
       <table><thead><tr><th style="width:24mm">Data</th><th>Forma</th>
