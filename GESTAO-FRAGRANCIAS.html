@@ -858,7 +858,7 @@ async function atualizarBadges() {
 
 /* Carimbo de versão do arquivo. Trocado pelo scripts/build.sh a cada geração:
    é o que permite dizer, olhando a tela, se a cópia aberta é a mais nova. */
-const VERSAO = '2026.08.09.2209';
+const VERSAO = '2026.08.09.2225';
 
 async function iniciar() {
   const el = document.getElementById('sbVer');
@@ -4556,9 +4556,9 @@ const RELATORIOS = [
   { id:'parados', g:'Produtos', t:'Produtos parados', d:'Capital imobilizado sem giro' },
   { id:'clientes', g:'Pessoas', t:'Clientes', d:'Cadastro, histórico e saldo devedor' },
   { id:'revendedores', g:'Pessoas', t:'Revendedores', d:'Extrato consolidado de cada revendedor' },
-  { id:'rev-geral', g:'Revendedores', t:'Produtos do revendedor', d:'Tudo que ele já pegou, com a situação de cada peça' },
-  { id:'rev-pagos', g:'Revendedores', t:'Produtos pagos', d:'O que o revendedor já quitou, peça a peça' },
-  { id:'rev-pagar', g:'Revendedores', t:'Produtos a pagar', d:'O que o revendedor ainda deve, peça a peça' },
+  { id:'rev-geral', g:'Revendedores', t:'Extrato de produtos do revendedor', d:'Pagos, devolvidos e a pagar — separados e somados', pessoa:'revendedor' },
+  { id:'rev-pagos', g:'Revendedores', t:'Produtos pagos', d:'O que o revendedor já quitou, peça a peça', pessoa:'revendedor' },
+  { id:'rev-pagar', g:'Revendedores', t:'Produtos a pagar', d:'O que o revendedor ainda deve, peça a peça', pessoa:'revendedor' },
   { id:'vendas', g:'Vendas', t:'Vendas', d:'Receita, custo, lucro e margem por venda' },
   { id:'vendas-produto', g:'Vendas', t:'Vendas por produto', d:'Ranking de produtos com lucro' },
   { id:'lucratividade', g:'Vendas', t:'Lucratividade por produto', d:'Participação de cada produto no lucro' },
@@ -4590,10 +4590,19 @@ async function abrirRelatorio(v, id) {
   if (!cfg) { location.hash = '#relatorios'; return; }
   crumb(`Relatórios › ${cfg.t}`);
   const fim = hoje(), ini = fim.slice(0, 4) + '-01-01';
+  /* Relatórios de revendedor ganham um seletor de pessoa: sem ele, "todos os
+     revendedores" numa lista só não responde a pergunta que se faz na prática,
+     que é "o que ESTE revendedor tem comigo". */
+  const revs = cfg.pessoa === 'revendedor'
+    ? await q(sb.from('revendedores').select('id,nome').is('deleted_at', null).order('nome')) : [];
+
   v.innerHTML = `
   <div class="page-head"><h1>${esc(cfg.t)}<small>${esc(cfg.d)}</small></h1>
     <div class="acts"><a class="btn btn-s btn-sm" href="#relatorios">← Relatórios</a></div></div>
   <div class="card"><div class="filters">
+      ${revs.length ? `<select class="inp" id="rrev" style="min-width:210px">
+        <option value="">Todos os revendedores</option>
+        ${revs.map(r => `<option value="${r.id}">${esc(r.nome)}</option>`).join('')}</select>` : ''}
       <label style="font-size:12.5px;color:var(--mute);align-self:center">Período</label>
       <input class="inp" type="date" id="r1" value="${ini}"><input class="inp" type="date" id="r2" value="${fim}">
       <input class="inp grow" id="rq" placeholder="🔍 Buscar…">
@@ -4601,17 +4610,21 @@ async function abrirRelatorio(v, id) {
       <button class="btn btn-s btn-sm" id="rPrint">🖨 Imprimir</button></div>
     <div id="rConteudo">${CARREGANDO}</div></div>`;
 
-  let dados = [], colunas = [], totais = '';
+  let dados = [], colunas = [], totais = '', render = null, imprimirDoc = null;
   const carregar = async () => {
-    const i = $('#r1').value, f = $('#r2').value;
+    const i = $('#r1').value, f = $('#r2').value, p = $('#rrev')?.value || '';
     $('#rConteudo').innerHTML = CARREGANDO;
-    const r = await montarRelatorio(id, i, f);
+    const r = await montarRelatorio(id, i, f, p);
     dados = r.linhas; colunas = r.colunas; totais = r.totais || '';
+    render = r.render || null; imprimirDoc = r.imprimir || null;
     pintar();
   };
   const pintar = () => {
     const t = $('#rq').value.trim().toLowerCase();
     const f = t ? dados.filter(l => colunas.some(c => String(c.v(l) ?? '').toLowerCase().includes(t))) : dados;
+    /* Alguns relatórios não cabem numa tabela plana e trazem o próprio
+       desenho — é o caso do extrato do revendedor, dividido em blocos. */
+    if (render) { $('#rConteudo').innerHTML = render(f, t); return; }
     $('#rConteudo').innerHTML = `
       <div class="tw"><table class="dt"><thead><tr>${colunas.map(c => `<th class="${c.a || ''}">${esc(c.t)}</th>`).join('')}</tr></thead>
       <tbody>${f.length ? f.map(l => `<tr>${colunas.map(c =>
@@ -4621,13 +4634,16 @@ async function abrirRelatorio(v, id) {
       <div class="pager"><span>${f.length} registro(s)</span><span class="sp"></span><span>${totais}</span></div>`;
   };
   $('#r1').onchange = carregar; $('#r2').onchange = carregar;
+  if ($('#rrev')) $('#rrev').onchange = carregar;
   $('#rq').addEventListener('input', pintar);
   $('#rExcel').onclick = () => exportarExcel(id, colunas.map(c => ({ t:c.t, v:c.v })), dados);
-  $('#rPrint').onclick = () => imprimir(docRelatorio(cfg.t, $('#r1').value, $('#r2').value, colunas, dados, totais));
+  $('#rPrint').onclick = () => imprimir(imprimirDoc
+    ? imprimirDoc()
+    : docRelatorio(cfg.t, $('#r1').value, $('#r2').value, colunas, dados, totais));
   await carregar();
 }
 
-async function montarRelatorio(id, i, f) {
+async function montarRelatorio(id, i, f, pessoa) {
   const sm = (l, k) => l.reduce((a, x) => a + N(typeof k === 'function' ? k(x) : x[k]), 0);
   switch (id) {
     case 'compras': {
@@ -4730,38 +4746,105 @@ async function montarRelatorio(id, i, f) {
         totais:`Em posse ${BRL(sm(l, 'valor_custo_em_posse'))} · em aberto ${BRL(sm(l, 'saldo_aberto'))}` };
     }
     /* Os três relatórios do revendedor são a mesma view com um filtro
-       diferente: cada linha é uma situação (pago, a pagar, devolvido, em
-       posse, amostra), com preço unitário e total. */
+       diferente. O geral tem desenho próprio: uma tabela plana com uma coluna
+       "situação" não responde a pergunta que se faz na prática — quanto ele
+       deve, quanto já pagou, o que devolveu. Por isso vai em blocos. */
     case 'rev-geral': case 'rev-pagos': case 'rev-pagar': {
       let cs = sb.from('vw_itens_revendedor').select('*').gte('data', i).lte('data', f);
+      if (pessoa) cs = cs.eq('revendedor_id', pessoa);
       if (id === 'rev-pagos')  cs = cs.eq('situacao', 'PAGO');
       if (id === 'rev-pagar')  cs = cs.eq('situacao', 'A_PAGAR');
       const l = await q(cs.order('revendedor_nome').order('data').order('produto_nome'));
-      const geral = id === 'rev-geral';
-      const TAG = { PAGO:'g', A_PAGAR:'a', DEVOLVIDO:'b', PERDIDO:'r', EM_POSSE:'n', AMOSTRA:'n', AMOSTRA_FINALIZADA:'n' };
-      const cols = [
+
+      const colsBase = [
         { t:'Revendedor', v:x => x.revendedor_nome },
         { t:'Origem', v:x => x.documento },
         { t:'Data', v:x => dBR(x.data) },
         { t:'Código', v:x => x.produto_codigo },
-        { t:'Produto', v:x => x.produto_nome + (x.produto_tamanho ? ' · ' + x.produto_tamanho : '') }];
-      if (geral) cols.push({ t:'Situação', v:x => x.situacao_label, a:'c',
-        h:x => `<span class="tag ${TAG[x.situacao] || 'n'}">${esc(x.situacao_label)}</span>` });
-      cols.push(
+        { t:'Produto', v:x => x.produto_nome + (x.produto_tamanho ? ' · ' + x.produto_tamanho : '') },
+        { t:'Situação', v:x => x.situacao_label, a:'c' },
         { t:'Qtd', v:x => N(x.quantidade), a:'c', h:x => QTD(x.quantidade) },
         { t:'Preço unit.', v:x => N(x.valor_unitario), a:'r', m:1, h:x => BRL(x.valor_unitario) },
-        { t:'Total', v:x => N(x.valor_total), a:'r', m:1, h:x => `<b>${BRL(x.valor_total)}</b>` });
+        { t:'Total', v:x => N(x.valor_total), a:'r', m:1, h:x => `<b>${BRL(x.valor_total)}</b>` }];
 
-      const som = (sit) => l.filter(x => x.situacao === sit).reduce((a, x) => a + N(x.valor_total), 0);
-      const qsom = (sit) => l.filter(x => x.situacao === sit).reduce((a, x) => a + N(x.quantidade), 0);
-      const totais = geral
-        ? `Pago <b class="pos">${BRL(som('PAGO'))}</b> · a pagar <b class="neg">${BRL(som('A_PAGAR'))}</b> ·
-           devolvido ${BRL(som('DEVOLVIDO'))} · em posse ${BRL(som('EM_POSSE'))} ·
-           mostruário ${BRL(som('AMOSTRA'))} <span style="color:var(--mute)">(amostra não se cobra)</span>`
-        : id === 'rev-pagos'
-          ? `${QTD(qsom('PAGO'))} peça(s) · <b class="pos">${BRL(som('PAGO'))}</b> recebidos`
-          : `${QTD(qsom('A_PAGAR'))} peça(s) · <b class="neg">${BRL(som('A_PAGAR'))}</b> a receber`;
-      return { linhas:l, colunas:cols, totais };
+      const som = (lst, sit) => lst.filter(x => x.situacao === sit).reduce((a, x) => a + N(x.valor_total), 0);
+      const qtd = (lst, sit) => lst.filter(x => x.situacao === sit).reduce((a, x) => a + N(x.quantidade), 0);
+
+      if (id !== 'rev-geral') {
+        const sit = id === 'rev-pagos' ? 'PAGO' : 'A_PAGAR';
+        return { linhas:l, colunas: colsBase.filter(c => c.t !== 'Situação'),
+          totais: id === 'rev-pagos'
+            ? `${QTD(qtd(l,'PAGO'))} peça(s) · <b class="pos">${BRL(som(l,'PAGO'))}</b> já recebidos`
+            : `${QTD(qtd(l,'A_PAGAR'))} peça(s) · <b class="neg">${BRL(som(l,'A_PAGAR'))}</b> a receber` };
+      }
+
+      /* ── Extrato geral, em blocos ── */
+      const BLOCOS = [
+        { sit:'A_PAGAR',            titulo:'A pagar',                cor:'amber', nota:'O que ele ainda deve' },
+        { sit:'PAGO',               titulo:'Pagos',                  cor:'green', nota:'Já quitado' },
+        { sit:'DEVOLVIDO',          titulo:'Devolvidos',             cor:'blue',  nota:'Voltou para o estoque — não se cobra' },
+        { sit:'EM_POSSE',           titulo:'Em posse, ainda não vendidos', cor:'', nota:'Continua com ele, em consignação' },
+        { sit:'AMOSTRA',            titulo:'Mostruário',             cor:'',      nota:'Amostra de demonstração — nunca se cobra' },
+        { sit:'AMOSTRA_FINALIZADA', titulo:'Mostruário finalizado',  cor:'',      nota:'Amostra que acabou — custo já foi da empresa' },
+        { sit:'PERDIDO',            titulo:'Perdidos',               cor:'red',   nota:'Extraviado ou danificado' }];
+
+      const tabela = (lst) => `<div class="tw"><table class="dt"><thead><tr>
+          ${pessoa ? '' : '<th>Revendedor</th>'}
+          <th>Origem</th><th>Data</th><th>Produto</th>
+          <th class="c">Qtd</th><th class="r">Preço unit.</th><th class="r">Total</th></tr></thead><tbody>
+          ${lst.map(x => `<tr>
+            ${pessoa ? '' : `<td>${esc(x.revendedor_nome)}</td>`}
+            <td class="nw">${esc(x.documento)}</td><td class="nw">${dBR(x.data)}</td>
+            <td><b>${esc(x.produto_nome)}</b>
+              <span style="display:block;font-size:11px;color:var(--mute)" class="num">${esc(x.produto_codigo)}</span></td>
+            <td class="c">${QTD(x.quantidade)}</td>
+            <td class="r money">${BRL(x.valor_unitario)}</td>
+            <td class="r money"><b>${BRL(x.valor_total)}</b></td></tr>`).join('')}
+        </tbody><tfoot><tr style="background:#fbfcfe;font-weight:700">
+          <td colspan="${pessoa ? 3 : 4}">Subtotal</td>
+          <td class="c">${QTD(lst.reduce((a, x) => a + N(x.quantidade), 0))}</td><td></td>
+          <td class="r money">${BRL(lst.reduce((a, x) => a + N(x.valor_total), 0))}</td></tr></tfoot>
+        </table></div>`;
+
+      const render = (linhas) => {
+        if (!linhas.length) return vazio('📄','Nenhum registro',
+          'Nenhum produto deste revendedor no período escolhido.');
+        const aPagar = som(linhas,'A_PAGAR'), pago = som(linhas,'PAGO'), devolvido = som(linhas,'DEVOLVIDO');
+        return `
+        <div class="card-b" style="padding-bottom:0">
+          <div class="kpis k4">
+            <div class="kpi amber"><div class="lab">A pagar</div><div class="val">${BRL(aPagar)}</div>
+              <div class="sub">${QTD(qtd(linhas,'A_PAGAR'))} peça(s)</div></div>
+            <div class="kpi green"><div class="lab">Já pago</div><div class="val">${BRL(pago)}</div>
+              <div class="sub">${QTD(qtd(linhas,'PAGO'))} peça(s)</div></div>
+            <div class="kpi blue"><div class="lab">Devolvido</div><div class="val">${BRL(devolvido)}</div>
+              <div class="sub">${QTD(qtd(linhas,'DEVOLVIDO'))} peça(s) · não entra na conta</div></div>
+            <div class="kpi"><div class="lab">Total movimentado</div><div class="val">${BRL(aPagar + pago)}</div>
+              <div class="sub">pago + a pagar</div></div>
+          </div>
+        </div>
+        ${BLOCOS.map(b => {
+          const lst = linhas.filter(x => x.situacao === b.sit);
+          if (!lst.length) return '';
+          return `<div class="card-b" style="padding-top:6px">
+            <div class="sec-t" style="display:flex;align-items:center;gap:9px;margin-bottom:8px">
+              <span>${b.titulo}</span>
+              <span class="tag ${b.cor === 'green' ? 'g' : b.cor === 'amber' ? 'a' : b.cor === 'red' ? 'r' : b.cor === 'blue' ? 'b' : 'n'}">
+                ${QTD(lst.reduce((a, x) => a + N(x.quantidade), 0))} un · ${BRL(lst.reduce((a, x) => a + N(x.valor_total), 0))}</span>
+              <span style="font-weight:400;font-size:11.5px;color:var(--mute);text-transform:none;letter-spacing:0">${b.nota}</span>
+            </div>
+            ${tabela(lst)}</div>`;
+        }).join('')}
+        <div class="pager"><span>${linhas.length} linha(s)</span><span class="sp"></span>
+          <span>A pagar <b class="neg">${BRL(aPagar)}</b> · pago <b class="pos">${BRL(pago)}</b>
+            · devolvido ${BRL(devolvido)}</span></div>`;
+      };
+
+      return { linhas:l, colunas:colsBase, render,
+        imprimir: pessoa && l.length
+          ? () => docItensRevendedor({ nome:l[0].revendedor_nome, whatsapp:l[0].revendedor_whatsapp }, l)
+          : null,
+        totais:`A pagar ${BRL(som(l,'A_PAGAR'))} · pago ${BRL(som(l,'PAGO'))} · devolvido ${BRL(som(l,'DEVOLVIDO'))}` };
     }
     case 'vendas': {
       const l = await q(sb.from('vw_resultado_consolidado').select('*').gte('data_venda', i).lte('data_venda', f).order('data_venda', { ascending:false }));

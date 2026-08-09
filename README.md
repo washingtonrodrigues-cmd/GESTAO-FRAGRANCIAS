@@ -159,8 +159,10 @@ Uma view só, `vw_itens_revendedor`, com **uma linha por situação**: um item d
 pagas, 2 devolvidas e 5 em aberto vira três linhas. Os três relatórios são a mesma consulta com um
 filtro diferente:
 
-- **Produtos do revendedor** — tudo que já passou pela mão dele: venda direta, consignação e
-  mostruário, com a situação de cada peça e preço unitário e total.
+- **Extrato de produtos do revendedor** — escolhe-se o revendedor e o relatório sai em blocos
+  separados e somados: *a pagar*, *pagos*, *devolvidos*, *em posse*, *mostruário*, *perdidos*.
+  No topo, quatro números: a pagar, já pago, devolvido e total movimentado. Imprime como
+  documento para entregar a ele.
 - **Produtos pagos** — só o que ele já quitou.
 - **Produtos a pagar** — só o que ainda deve.
 

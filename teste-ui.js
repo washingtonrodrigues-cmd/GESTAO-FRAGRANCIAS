@@ -846,6 +846,31 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
     await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
   }
 
+  P('\n── Extrato geral do revendedor, em blocos ──');
+  await page.evaluate(() => location.hash = '#relatorios/rev-geral');
+  await page.waitForTimeout(1600);
+  const temSel = await page.evaluate(() => !!document.querySelector('#rrev'));
+  if (temSel) P('  ✓ tem seletor de revendedor');
+  else { P('  ✗ falta o seletor de revendedor'); falhas++; }
+  if (temSel) {
+    await page.selectOption('#rrev', { index: 1 });
+    await page.waitForTimeout(1500);
+    const ex = await page.evaluate(() => ({
+      txt: (document.querySelector('#rConteudo').textContent || '').replace(/\s+/g,' '),
+      tabelas: document.querySelectorAll('#rConteudo table').length,
+      kpis: document.querySelectorAll('#rConteudo .kpi').length }));
+    P('  ' + ex.txt.slice(0, 190));
+    for (const [rot, ok2] of [
+      ['4 indicadores no topo', ex.kpis === 4],
+      ['um bloco por situação', ex.tabelas >= 3],
+      ['bloco A pagar com total', /A pagar 5 un · R\$ 750,00/.test(ex.txt)],
+      ['bloco Pagos com total', /Pagos 3 un · R\$ 450,00/.test(ex.txt)],
+      ['bloco Devolvidos com total', /Devolvidos 2 un · R\$ 300,00/.test(ex.txt)],
+      ['diz que devolvido não entra na conta', /não entra na conta/.test(ex.txt)],
+      ['total movimentado = pago + a pagar', /1\.200,00/.test(ex.txt)]
+    ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+  }
+
   P('\n── Relatórios do revendedor ──');
   for (const [id, esperado] of [
     ['rev-geral', /Pago/],
@@ -870,7 +895,7 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
       ['mostra devolvido', /Devolvido/.test(geral)],
       ['mostra em posse', /Em posse/.test(geral)],
       ['mostra mostruário', /Mostruário/.test(geral)],
-      ['avisa que amostra não se cobra', /amostra não se cobra/i.test(geral)]
+      ['avisa que amostra nunca se cobra', /nunca se cobra/i.test(geral)]
     ]) { if (ok2) P('  ✓ geral ' + rot); else { P('  ✗ geral ' + rot); falhas++; } }
   }
 
