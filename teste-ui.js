@@ -941,23 +941,58 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
     await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
   }
 
-  P('\n── Despesas: aba de compras a pagar ──');
+  P('\n── Contas a pagar: tela própria ──');
+  const noMenu = await page.evaluate(() => !!document.querySelector('a[data-h="pagar"]'));
+  if (noMenu) P('  ✓ item "Contas a Pagar" no menu lateral');
+  else { P('  ✗ falta o item no menu'); falhas++; }
+  await page.evaluate(() => location.hash = '#pagar');
+  await page.waitForTimeout(1600);
+  const cp = await page.evaluate(() => ({
+    texto: (document.querySelector('#view').textContent || '').replace(/\s+/g,' '),
+    linhas: document.querySelectorAll('#tb tr').length,
+    kpis: document.querySelectorAll('.kpi').length,
+    abas: document.querySelectorAll('[data-f]').length,
+    pagar: !!document.querySelector('[data-pg]') }));
+  P('  ' + JSON.stringify({ linhas:cp.linhas, kpis:cp.kpis, abas:cp.abas, pagar:cp.pagar }));
+  for (const [rot, ok2] of [
+    ['abre a tela', /Contas a pagar/i.test(cp.texto)],
+    ['5 indicadores', cp.kpis === 5],
+    ['abas de situação', cp.abas === 5],
+    ['lista a compra', cp.linhas >= 1],
+    ['tem botão Pagar', cp.pagar],
+    ['explica que não é despesa', /Isto não é despesa/i.test(cp.texto)],
+    ['mostra o total a pagar', /1\.080,00/.test(cp.texto)]
+  ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+
+  if (cp.pagar) {
+    await page.click('[data-pg]'); await page.waitForTimeout(700);
+    const mp = await page.evaluate(() => ({ data: document.querySelector('#pc_dt')?.value,
+      texto: (document.querySelector('.modal-b')?.textContent || '').replace(/\s+/g,' ') }));
+    if (mp.data === '2026-08-20') P('  ✓ modal de pagamento traz a data prevista');
+    else { P('  ✗ data prevista errada no modal: ' + mp.data); falhas++; }
+    const ch = await page.evaluate(async () => {
+      let cap = null; const orig = window.rpc;
+      window.rpc = async (fn, args) => { cap = { fn, args }; throw new Error('parar'); };
+      document.querySelector('.modal-f [data-ok]').click();
+      await new Promise(r => setTimeout(r, 600));
+      window.rpc = orig; return cap;
+    });
+    if (ch?.fn === 'fn_marcar_compra_paga') P('  ✓ chama fn_marcar_compra_paga');
+    else { P('  ✗ RPC de pagamento incorreta: ' + JSON.stringify(ch)); falhas++; }
+    await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
+  }
+
+  P('\n── Despesas aponta para Contas a pagar ──');
   await page.evaluate(() => location.hash = '#despesas');
   await page.waitForTimeout(1500);
-  const dsp = await page.evaluate(() => {
-    const b = [...document.querySelectorAll('.tabs [data-t]')].find(x => x.dataset.t === 'comp');
-    if (b) b.click();
-    return { temAba: !!b,
-      texto: (document.querySelector('#view').textContent || '').replace(/\s+/g,' '),
-      linhas: document.querySelectorAll('#ctb tr').length,
-      marcar: !!document.querySelector('[data-pg]') };
-  });
+  const dsp = await page.evaluate(() => ({
+    texto: (document.querySelector('#view').textContent || '').replace(/\s+/g,' '),
+    semAba: !document.querySelector('[data-t="comp"]'),
+    link: !!document.querySelector('a[href="#pagar"]') }));
   for (const [rot, ok2] of [
-    ['tem a aba Compras a pagar', dsp.temAba],
-    ['lista a compra', dsp.linhas >= 1],
-    ['tem botão de marcar como paga', dsp.marcar],
-    ['explica que compra não é despesa', /Compra não é despesa/i.test(dsp.texto)],
-    ['mostra o total de compras a pagar', /Compras a pagar/.test(dsp.texto)]
+    ['aba de compras saiu de Despesas', dsp.semAba],
+    ['avisa que há compras não pagas', /compra\(s\)/.test(dsp.texto)],
+    ['tem link para Contas a Pagar', dsp.link]
   ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
 
   P('\n── Crédito de devolução ──');

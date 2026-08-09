@@ -84,7 +84,7 @@ async function formCompra(v) {
         <div class="grid-f f3" style="margin-top:14px">
           <div><label>Data do pagamento</label>
             <input class="inp" type="date" id="c_dtpag" value="${hoje()}">
-            <div class="hint">Quando o dinheiro sai — aparece em Despesas</div></div>
+            <div class="hint">Quando o dinheiro sai — aparece em Contas a Pagar</div></div>
           <div><label>Forma de pagamento</label><select class="inp" id="c_fpag">
             <option value="">—</option>${selectOpts(S.formas)}</select></div>
           <div style="display:flex;align-items:flex-end;padding-bottom:9px">
@@ -323,7 +323,7 @@ async function fichaCompra(v, id) {
       <div class="sumrow"><span class="l">Forma</span><span>${esc(c.formas_pagamento?.nome || '—')}</span></div>
       <div class="sumrow tot"><span class="l">Valor</span><span class="money">${BRL(c.custo_total)}</span></div>
     </div>
-    <div class="hint" style="margin-top:10px">Esta compra aparece em <a href="#despesas">Despesas › Compras a pagar</a>.
+    <div class="hint" style="margin-top:10px">Esta compra aparece em <a href="#pagar">Contas a Pagar</a>.
       Ela não entra como despesa no resultado: o custo da mercadoria vira CMV quando o produto é vendido.</div>
     </div></div>` : ''}
   ${c.observacoes ? `<div class="card"><div class="card-b"><b style="font-size:12px;color:var(--mute)">OBSERVAÇÕES</b>

@@ -177,10 +177,13 @@ entrada de estoque, refaz o rateio de frete e taxa e dá entrada de novo — ent
 todos os produtos da nota é recalculado. Se alguma unidade daquela compra já saiu do estoque, a
 alteração é recusada.
 
-A compra também registra **quando será paga**, e aparece em Despesas › Compras a pagar. Ela **não é
-despesa**: a mercadoria vira estoque e o custo entra no resultado como CMV quando o produto é
-vendido — frete e taxa de cartão já vão embutidos nesse custo. A lista serve para acompanhar o
-caixa, não para somar no lucro.
+A compra também registra **quando será paga**, e alimenta a tela **Contas a Pagar**, no menu
+Financeiro ao lado de Contas a Receber: total a pagar, vencido, vence em 7 dias, a vencer e já pago,
+com abas por situação e o botão de dar baixa. Compra vencida acende o aviso no menu.
+
+Ela **não é despesa**: a mercadoria vira estoque e o custo entra no resultado como CMV quando o
+produto é vendido — frete e taxa de cartão já vão embutidos nesse custo. Por isso a tela vive fora
+de Despesas e não soma no lucro; serve para saber quando sai o dinheiro.
 
 ### O que o revendedor vê
 

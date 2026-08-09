@@ -330,6 +330,7 @@ const MENU = [
       { h:'estoque', i:'🗃️', t:'Estoque' } ] },
   { g:'Financeiro', itens:[
       { h:'receber', i:'💰', t:'Contas a Receber', badge:'vencidos' },
+      { h:'pagar', i:'📤', t:'Contas a Pagar', badge:'apagar' },
       { h:'recebimentos', i:'🧾', t:'Recebimentos' },
       { h:'despesas', i:'📉', t:'Despesas' },
       { h:'financeiro', i:'📊', t:'DRE e Caixa' } ] },
@@ -416,6 +417,12 @@ async function atualizarBadges() {
     const d = await q(sb.from('vw_dashboard').select('qtd_titulos_vencidos').single());
     const b = $('[data-badge="vencidos"]');
     if (b) { const n = N(d.qtd_titulos_vencidos); b.textContent = n; b.style.display = n > 0 ? '' : 'none'; }
+  } catch (e) {}
+  /* Compra vencida e não paga também merece aviso no menu. */
+  try {
+    const c = await q(sb.from('vw_compras_a_pagar').select('id').eq('situacao','VENCIDO'));
+    const b = $('[data-badge="apagar"]');
+    if (b) { b.textContent = c.length; b.style.display = c.length > 0 ? '' : 'none'; }
   } catch (e) {}
 }
 

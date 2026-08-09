@@ -1128,6 +1128,103 @@ ROTAS.recebimentos = async (v) => {
   pintar();
 };
 
+/* ═══════════════ CONTAS A PAGAR ═══════════════ */
+/* Compra não é despesa: a mercadoria vira estoque, e o custo dela só entra no
+   resultado como CMV no dia em que o produto é vendido. Esta tela existe para
+   responder outra pergunta — quando sai o dinheiro —, e por isso vive fora de
+   Despesas e não soma no lucro. */
+ROTAS.pagar = async (v, filtro) => {
+  crumb('Contas a pagar');
+  const cps = await q(sb.from('vw_compras_a_pagar').select('*').order('data_pagamento', { nullsFirst:false }));
+  const ab = cps.filter(c => !c.pago);
+  const venc = ab.filter(c => c.situacao === 'VENCIDO');
+  const breve = ab.filter(c => c.situacao === 'VENCE_EM_BREVE');
+  const fut = ab.filter(c => c.situacao === 'A_VENCER');
+  const semData = ab.filter(c => c.situacao === 'SEM_DATA');
+  const pagas = cps.filter(c => c.pago);
+  const s = (l) => l.reduce((a, c) => a + N(c.custo_total), 0);
+
+  v.innerHTML = `
+  <div class="page-head"><h1>Contas a pagar<small>O que você deve aos fornecedores · posição em ${agoraBR()}</small></h1>
+    <div class="acts"><button class="btn btn-s btn-sm" id="expBtn">📊 Excel</button>
+      <a class="btn btn-p btn-sm" href="#compras/nova">+ Nova compra</a></div></div>
+  <div class="kpis k5">
+    <div class="kpi amber"><div class="lab">Total a pagar</div><div class="val">${BRL(s(ab))}</div>
+      <div class="sub">${ab.length} compra(s)</div></div>
+    <div class="kpi red"><div class="lab">Vencido</div><div class="val">${BRL(s(venc))}</div>
+      <div class="sub">${venc.length} compra(s)</div></div>
+    <div class="kpi amber"><div class="lab">Vence em 7 dias</div><div class="val">${BRL(s(breve))}</div></div>
+    <div class="kpi blue"><div class="lab">A vencer</div><div class="val">${BRL(s(fut))}</div></div>
+    <div class="kpi green"><div class="lab">Já pago</div><div class="val">${BRL(s(pagas))}</div>
+      <div class="sub">${pagas.length} compra(s)</div></div>
+  </div>
+  ${semData.length ? `<div class="alert warn"><span>⚠</span><div><b>${semData.length} compra(s) sem data de pagamento.</b>
+    Abra a compra e informe quando ela vence, para ela entrar no controle.</div></div>` : ''}
+  <div class="alert info"><span>ℹ</span><div><b>Isto não é despesa.</b> A mercadoria vira estoque, e o
+    custo dela entra no resultado como CMV quando o produto é vendido — frete e taxa de cartão já vão
+    embutidos nesse custo. Lançar a compra também como despesa contaria o mesmo dinheiro duas vezes e
+    faria o lucro parecer menor do que é. Esta tela existe para você <b>saber quando sai o dinheiro</b>.</div></div>
+  <div class="card">
+    <div class="tabs" style="margin:0;padding:0 13px">
+      <button data-f="venc">🔴 Vencidas (${venc.length})</button>
+      <button data-f="breve">🟡 Vencem em breve (${breve.length})</button>
+      <button data-f="fut">📅 A vencer (${fut.length})</button>
+      <button data-f="pagas">✅ Pagas (${pagas.length})</button>
+      <button data-f="todas" class="on">📋 Todas (${cps.length})</button></div>
+    <div class="filters">
+      <input class="inp grow" id="fq" placeholder="🔍 Buscar por fornecedor ou nº da nota…">
+      <input class="inp" type="date" id="fd1"><input class="inp" type="date" id="fd2"></div>
+    <div class="tw"><table class="dt"><thead><tr>
+      <th>Nº</th><th>Compra</th><th>Fornecedor</th><th>Documento</th><th>Pagamento</th>
+      <th class="c">Situação</th><th>Forma</th><th class="r">Valor</th><th></th></tr></thead>
+      <tbody id="tb"></tbody></table></div>
+    <div class="pager"><span id="cnt"></span></div></div>`;
+
+  const SIT = { PAGO:['g','Paga'], VENCIDO:['r','Vencida'], VENCE_EM_BREVE:['a','Vence em breve'],
+                A_VENCER:['b','A vencer'], SEM_DATA:['n','Sem data'] };
+  let aba = filtro || 'todas';
+  const pintar = () => {
+    const t = $('#fq').value.trim().toLowerCase(), d1 = $('#fd1').value, d2 = $('#fd2').value;
+    const base = { venc, breve, fut, pagas, todas: cps }[aba] || cps;
+    const f = base.filter(c =>
+      (!t || `${c.fornecedor_nome || ''} ${c.numero_documento || ''}`.toLowerCase().includes(t))
+      && (!d1 || (c.data_pagamento || c.data_compra) >= d1)
+      && (!d2 || (c.data_pagamento || c.data_compra) <= d2));
+    $('#cnt').textContent = `${f.length} compra(s) · ${BRL(f.reduce((a, c) => a + N(c.custo_total), 0))}`;
+    $('#tb').innerHTML = f.length ? f.map(c => {
+      const sg = SIT[c.situacao] || SIT.SEM_DATA;
+      return `<tr>
+      <td class="num"><a href="#compras/${c.id}"><b>${c.numero}</b></a></td>
+      <td class="nw">${dBR(c.data_compra)}</td>
+      <td>${esc(c.fornecedor_nome)}</td>
+      <td style="font-size:12.5px;color:var(--mute)">${esc(c.numero_documento || '—')}</td>
+      <td class="nw">${c.data_pagamento ? dBR(c.data_pagamento) : '—'}
+        ${!c.pago && c.dias_para_pagar != null ? `<span style="display:block;font-size:11px;color:var(--mute)">${
+          c.dias_para_pagar < 0 ? Math.abs(c.dias_para_pagar) + ' dia(s) em atraso'
+          : c.dias_para_pagar === 0 ? 'vence hoje' : 'em ' + c.dias_para_pagar + ' dia(s)'}</span>` : ''}</td>
+      <td class="c"><span class="tag ${sg[0]}">${sg[1]}</span></td>
+      <td>${esc(c.forma_pagamento || '—')}</td>
+      <td class="r money"><b>${BRL(c.custo_total)}</b></td>
+      <td class="nw">${!c.pago ? `<button class="btn btn-g btn-sm" data-pg="${c.id}">✓ Pagar</button>` : ''}</td></tr>`;
+    }).join('') : `<tr><td colspan="9">${vazio('📤','Nenhuma compra',
+      'Compras confirmadas aparecem aqui com a data de pagamento que você informar.')}</td></tr>`;
+    $$('[data-pg]').forEach(b => b.onclick = () => formPagarCompra(cps.find(x => x.id === b.dataset.pg)));
+  };
+  $$('[data-f]').forEach(b => b.onclick = () => {
+    aba = b.dataset.f; $$('[data-f]').forEach(x => x.classList.toggle('on', x === b)); pintar(); });
+  ['#fq','#fd1','#fd2'].forEach(x => $(x).addEventListener('input', pintar));
+  $('#expBtn').onclick = () => exportarExcel('contas-a-pagar', [
+    { t:'Nº', v:c => c.numero }, { t:'Compra', v:c => dBR(c.data_compra) },
+    { t:'Fornecedor', v:c => c.fornecedor_nome }, { t:'Documento', v:c => c.numero_documento || '' },
+    { t:'Pagamento', v:c => c.data_pagamento ? dBR(c.data_pagamento) : '' },
+    { t:'Situação', v:c => (SIT[c.situacao] || SIT.SEM_DATA)[1] },
+    { t:'Forma', v:c => c.forma_pagamento || '' },
+    { t:'Produtos', v:c => N(c.subtotal_produtos) }, { t:'Frete', v:c => N(c.valor_frete) },
+    { t:'Taxa', v:c => N(c.valor_taxa_cartao) }, { t:'Valor total', v:c => N(c.custo_total) }], cps);
+  if (filtro) { const b = $(`[data-f="${filtro}"]`); if (b) b.click(); }
+  pintar();
+};
+
 /* Marcar a compra como paga, informando quando o dinheiro saiu. */
 async function formPagarCompra(c) {
   const formas = S.formas || [];
@@ -1165,9 +1262,8 @@ ROTAS.despesas = async (v) => {
   crumb('Despesas');
   const [ds, cps] = await Promise.all([
     q(sb.from('despesas').select('*,produtos(nome),formas_pagamento(nome)').is('deleted_at', null).order('data_despesa', { ascending:false })),
-    q(sb.from('vw_compras_a_pagar').select('*').order('data_pagamento', { nullsFirst:false }))
+    q(sb.from('vw_compras_a_pagar').select('*').eq('pago', false))
   ]);
-  const aPagar = cps.filter(c => !c.pago);
   const CAT = { PERDA_ESTOQUE:'Perda de estoque', BAIXA_MOSTRUARIO:'Custo de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
     EMBALAGEM:'Embalagem', MARKETING:'Marketing', COMISSAO:'Comissão', OPERACIONAL:'Operacional', OUTRAS:'Outras' };
   const porCat = {}; ds.forEach(d => porCat[d.categoria] = (porCat[d.categoria] || 0) + N(d.valor));
@@ -1180,13 +1276,13 @@ ROTAS.despesas = async (v) => {
     <div class="kpi red"><div class="lab">Total de despesas</div><div class="val">${BRL(ds.reduce((a, d) => a + N(d.valor), 0))}</div></div>
     <div class="kpi"><div class="lab">Fixas</div><div class="val">${BRL(ds.filter(d => d.natureza === 'FIXA').reduce((a, d) => a + N(d.valor), 0))}</div></div>
     <div class="kpi"><div class="lab">Variáveis</div><div class="val">${BRL(ds.filter(d => d.natureza === 'VARIAVEL').reduce((a, d) => a + N(d.valor), 0))}</div></div>
-    <div class="kpi amber"><div class="lab">Compras a pagar</div>
-      <div class="val">${BRL(aPagar.reduce((a, c) => a + N(c.custo_total), 0))}</div>
-      <div class="sub">${aPagar.length} compra(s) · fora do resultado</div></div>
+    <div class="kpi amber"><div class="lab">Perdas de estoque</div><div class="val">${BRL(porCat.PERDA_ESTOQUE || 0)}</div></div>
   </div>
-  <div class="tabs"><button class="on" data-t="desp">📉 Despesas (${ds.length})</button>
-    <button data-t="comp">🧾 Compras a pagar (${cps.length})</button></div>
-  <div id="pn_desp"><div class="card"><div class="filters">
+  ${cps.length ? `<div class="alert info"><span>ℹ</span><div>Você tem
+    <b>${cps.length} compra(s)</b> somando <b>${BRL(cps.reduce((a, c) => a + N(c.custo_total), 0))}</b>
+    ainda não pagas ao fornecedor. Elas não entram aqui porque compra não é despesa —
+    veja em <a href="#pagar">Contas a Pagar</a>.</div></div>` : ''}
+  <div class="card"><div class="filters">
       <input class="inp grow" id="fq" placeholder="🔍 Buscar…">
       <select class="inp" id="fcat"><option value="">Todas as categorias</option>
         ${Object.entries(CAT).map(([k, x]) => `<option value="${k}">${x}</option>`).join('')}</select>
@@ -1194,59 +1290,7 @@ ROTAS.despesas = async (v) => {
     <div class="tw"><table class="dt"><thead><tr>
       <th>Nº</th><th>Data</th><th>Categoria</th><th>Descrição</th><th class="c">Natureza</th>
       <th class="r">Valor</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
-    <div class="pager"><span id="cnt"></span></div></div></div>
-
-  <div id="pn_comp" style="display:none"><div class="alert info"><span>ℹ</span><div>
-    <b>Compra não é despesa.</b> A mercadoria vira estoque, e o custo dela entra no resultado
-    como CMV no dia em que o produto é vendido — frete e taxa de cartão já vão embutidos nesse
-    custo. Lançar a compra também aqui contaria o mesmo dinheiro duas vezes. Esta lista existe
-    para você <b>saber quando sai o dinheiro</b>, não para somar no lucro.</div></div>
-  <div class="card"><div class="filters">
-      <input class="inp grow" id="cq" placeholder="🔍 Buscar por fornecedor…">
-      <select class="inp" id="csit"><option value="">Pagas e a pagar</option>
-        <option value="ABERTO">Só a pagar</option><option value="PAGO">Só pagas</option>
-        <option value="VENCIDO">Só vencidas</option></select>
-      <input class="inp" type="date" id="cd1"><input class="inp" type="date" id="cd2"></div>
-    <div class="tw"><table class="dt"><thead><tr>
-      <th>Nº</th><th>Compra</th><th>Fornecedor</th><th>Vencimento</th><th class="c">Situação</th>
-      <th>Forma</th><th class="r">Valor</th><th></th></tr></thead><tbody id="ctb"></tbody></table></div>
-    <div class="pager"><span id="ccnt"></span></div></div></div>`;
-
-  $$('.tabs [data-t]').forEach(b => b.onclick = () => {
-    $$('.tabs [data-t]').forEach(x => x.classList.toggle('on', x === b));
-    $('#pn_desp').style.display = b.dataset.t === 'desp' ? '' : 'none';
-    $('#pn_comp').style.display = b.dataset.t === 'comp' ? '' : 'none';
-  });
-
-  const SIT = { PAGO:['g','Paga'], VENCIDO:['r','Vencida'], VENCE_EM_BREVE:['a','Vence em breve'],
-                A_VENCER:['b','A vencer'], SEM_DATA:['n','Sem data'] };
-  const pintarCompras = () => {
-    const t = $('#cq').value.trim().toLowerCase(), sit = $('#csit').value,
-          d1 = $('#cd1').value, d2 = $('#cd2').value;
-    const f = cps.filter(c => (!t || (c.fornecedor_nome || '').toLowerCase().includes(t))
-      && (!sit || (sit === 'ABERTO' ? !c.pago : c.situacao === sit))
-      && (!d1 || (c.data_pagamento || c.data_compra) >= d1)
-      && (!d2 || (c.data_pagamento || c.data_compra) <= d2));
-    $('#ccnt').textContent = `${f.length} compra(s) · ${BRL(f.reduce((a, c) => a + N(c.custo_total), 0))}`;
-    $('#ctb').innerHTML = f.length ? f.map(c => {
-      const sg = SIT[c.situacao] || SIT.SEM_DATA;
-      return `<tr>
-      <td class="num"><a href="#compras/${c.id}"><b>${c.numero}</b></a></td>
-      <td class="nw">${dBR(c.data_compra)}</td>
-      <td>${esc(c.fornecedor_nome)}</td>
-      <td class="nw">${c.data_pagamento ? dBR(c.data_pagamento) : '—'}
-        ${!c.pago && c.dias_para_pagar != null ? `<span style="display:block;font-size:11px;color:var(--mute)">${
-          c.dias_para_pagar < 0 ? Math.abs(c.dias_para_pagar) + ' dias em atraso'
-          : c.dias_para_pagar === 0 ? 'vence hoje' : 'em ' + c.dias_para_pagar + ' dias'}</span>` : ''}</td>
-      <td class="c"><span class="tag ${sg[0]}">${sg[1]}</span></td>
-      <td>${esc(c.forma_pagamento || '—')}</td>
-      <td class="r money"><b>${BRL(c.custo_total)}</b></td>
-      <td>${!c.pago ? `<button class="btn btn-g btn-sm" data-pg="${c.id}">✓ Marcar paga</button>` : ''}</td></tr>`;
-    }).join('') : `<tr><td colspan="8">${vazio('🧾','Nenhuma compra','Compras confirmadas aparecem aqui com a data de pagamento.')}</td></tr>`;
-    $$('[data-pg]').forEach(b => b.onclick = () => formPagarCompra(cps.find(x => x.id === b.dataset.pg)));
-  };
-  ['#cq','#csit','#cd1','#cd2'].forEach(x => $(x).addEventListener('input', pintarCompras));
-  pintarCompras();
+    <div class="pager"><span id="cnt"></span></div></div>`;
 
   const pintar = () => {
     const t = $('#fq').value.trim().toLowerCase(), c = $('#fcat').value, d1 = $('#fd1').value, d2 = $('#fd2').value;
