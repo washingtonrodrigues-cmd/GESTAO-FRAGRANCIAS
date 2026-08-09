@@ -206,6 +206,16 @@ ela gerou.
 Parcela cancelada deixa de reservar o número: o índice único passou a valer só para parcela não
 cancelada, senão a nova parcela 1 colidiria com a antiga.
 
+### Recebimento parcial
+
+Digitar no campo **Valor recebido** um valor menor que a parcela redistribui a alocação sozinho, na
+ordem: primeiro as parcelas que o usuário abriu, depois as demais da mais antiga para a mais nova.
+A linha mostra quanto **fica devendo** e marca a parcela como *parcial*; o saldo continua em aberto.
+
+Antes, mudar o valor só recalculava o resumo — a alocação anterior continuava maior que o recebido,
+o rodapé acusava "excede o recebido" e o botão travava. Na prática, parecia que o sistema não
+aceitava pagamento parcial, embora o banco sempre tenha aceitado.
+
 ### O que o revendedor vê
 
 Os documentos que vão para a mão do revendedor — recibo de entrega e prestação de contas — mostram

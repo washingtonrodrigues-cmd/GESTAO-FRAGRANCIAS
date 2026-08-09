@@ -706,6 +706,44 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
   else { P('  ✗ troca de aba não funcionou'); falhas++; }
   await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
 
+  P('\n── Recebimento menor que a parcela ──');
+  await page.evaluate(() => location.hash = '#receber');
+  await page.waitForTimeout(1500);
+  await page.click('[data-rc]'); await page.waitForTimeout(1000);
+  {
+    // o cliente tem parcelas de 250; recebe só 100
+    const antes = await page.evaluate(() => document.querySelector('#rc_valor')?.value);
+    await page.evaluate(() => { const e = document.querySelector('#rc_valor');
+      e.value = '100'; e.dispatchEvent(new Event('input')); });
+    await page.waitForTimeout(500);
+    const st = await page.evaluate(() => ({
+      travado: document.querySelector('.modal-f [data-ok]').disabled,
+      resumo: (document.querySelector('#rc_res')?.textContent || '').replace(/\s+/g,' '),
+      linha1: (document.querySelectorAll('#rctb tbody tr')[0]?.textContent || '').replace(/\s+/g,' '),
+      aloc: document.querySelector('#rctb tbody .al')?.value }));
+    P('  valor inicial ' + antes + ' → 100: ' + JSON.stringify(st).slice(0, 260));
+    for (const [rot, ok2] of [
+      ['botão continua liberado com valor menor', st.travado === false],
+      ['redistribui a alocação sozinho', st.aloc === '100.00'],
+      ['mostra que a parcela fica parcial', /parcial/i.test(st.linha1)],
+      ['mostra quanto fica devendo', /150,00/.test(st.linha1)],
+      ['não sobra valor sem alocar', /Não alocado R\$ 0,00/.test(st.resumo)]
+    ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+
+    const ch = await page.evaluate(async () => {
+      let cap = null; const orig = window.rpc;
+      window.rpc = async (fn, args) => { cap = { fn, args }; throw new Error('parar'); };
+      document.querySelector('.modal-f [data-ok]').click();
+      await new Promise(r => setTimeout(r, 700));
+      window.rpc = orig; return cap;
+    });
+    const a0 = ch?.args?.p_alocacoes?.[0];
+    if (ch?.fn === 'fn_registrar_recebimento' && Number(ch.args.p_valor) === 100 && Number(a0?.valor) === 100)
+      P('  ✓ envia recebimento de R$ 100,00 alocado na parcela');
+    else { P('  ✗ payload do parcial incorreto: ' + JSON.stringify(ch).slice(0,220)); falhas++; }
+    await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
+  }
+
   P('\n── Mostruário: finalizar em vez de baixar ──');
   await page.evaluate(() => location.hash = '#revendedores/44444444-4444-4444-4444-444444444444');
   await page.waitForTimeout(1600);

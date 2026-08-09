@@ -865,7 +865,7 @@ async function atualizarBadges() {
 
 /* Carimbo de versão do arquivo. Trocado pelo scripts/build.sh a cada geração:
    é o que permite dizer, olhando a tela, se a cópia aberta é a mais nova. */
-const VERSAO = '2026.08.09.2302';
+const VERSAO = '2026.08.09.2313';
 
 async function iniciar() {
   const el = document.getElementById('sbVer');
@@ -4056,6 +4056,12 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
   const aloc = {};
   todos.forEach(t => aloc[t.id] = preSel.has(t.id) ? N(t.saldo) : 0);
   const totalPre = Object.values(aloc).reduce((a, b) => a + b, 0);
+  /* Ordem em que o dinheiro é distribuído: primeiro as parcelas que o usuário
+     abriu (ele clicou nelas de propósito), depois as demais, da mais antiga
+     para a mais nova. */
+  const ordemAloc = [...todos].sort((a, b) =>
+    (preSel.has(b.id) ? 1 : 0) - (preSel.has(a.id) ? 1 : 0)
+    || (a.data_vencimento < b.data_vencimento ? -1 : a.data_vencimento > b.data_vencimento ? 1 : 0));
 
   /* Revendedor costuma pagar por peça ("hoje te acerto 3 frascos"), não por
      parcela. Para ele o padrão é receber por produto; o modo por valor
@@ -4099,7 +4105,9 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
       <div id="rc_valorbox" style="display:${modo === 'valor' ? '' : 'none'}">
       <div class="grid-f f3" style="margin-bottom:16px">
       <div><label>Valor recebido <span style="color:var(--red)">*</span></label>
-        <input class="inp num" type="number" step="0.01" min="0.01" id="rc_valor" value="${totalPre.toFixed(2)}"></div>
+        <input class="inp num" type="number" step="0.01" min="0.01" id="rc_valor" value="${totalPre.toFixed(2)}">
+        <div class="hint">Recebeu menos que a parcela? Digite o valor que entrou — o sistema
+          distribui e a parcela fica <b>parcial</b>, com o resto em aberto.</div></div>
       <div><label>Data</label><input class="inp" type="date" id="rc_data" value="${hoje()}" max="${hoje()}"></div>
       <div><label>Forma de pagamento</label><select class="inp" id="rc_forma">${selectOpts(S.formas)}</select></div>
     </div>
@@ -4108,8 +4116,8 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
       <button class="btn btn-s btn-sm" id="rc_zerar">Limpar alocação</button></div>
     <div class="tw" style="max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:9px">
       <table class="itens-tb" id="rctb"><thead><tr>
-        <th>Parcela</th><th>Vencimento</th><th class="r">Saldo</th><th style="width:22%">Alocar</th>
-        <th class="c">Resultado</th></tr></thead><tbody></tbody></table></div>
+        <th>Parcela</th><th>Vencimento</th><th class="r">Saldo</th><th style="width:20%">Alocar</th>
+        <th class="r">Fica devendo</th><th class="c">Resultado</th></tr></thead><tbody></tbody></table></div>
     <div id="rc_res" style="margin-top:14px"></div>
     <div style="margin-top:12px"><label>Observações</label><textarea class="inp" id="rc_obs"></textarea></div>
       </div>`,
@@ -4124,6 +4132,7 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
         <td class="nw">${dBR(t.data_vencimento)} ${tagSituacao(t.situacao_real, t.dias_atraso)}</td>
         <td class="r money">${BRL(t.saldo)}</td>
         <td><input class="inp num al" type="number" step="0.01" min="0" max="${N(t.saldo)}" value="${al ? al.toFixed(2) : ''}" placeholder="0,00"></td>
+        <td class="r money ${rest > 0 && al ? 'neg' : ''}">${al ? BRL(rest) : '—'}</td>
         <td class="c">${!al ? '<span class="tag n">—</span>' : rest <= 0 ? '<span class="tag g">✓ quitada</span>' : '<span class="tag a">parcial</span>'}</td></tr>`;
     }).join('');
     $$('#rctb tbody .al', m.body).forEach(inp => inp.oninput = (e) => {
@@ -4134,10 +4143,21 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
     });
     resumo();
   };
+  /* Atualiza só os valores dos campos de alocação, sem recriar a tabela —
+     recriar tiraria o foco de quem está digitando o valor recebido. */
+  const atualizarCampos = () => {
+    $$('#rctb tbody tr', m.body).forEach(tr => {
+      const inp = $('.al', tr); if (!inp || inp === document.activeElement) return;
+      const al = N(aloc[tr.dataset.id]);
+      inp.value = al ? al.toFixed(2) : '';
+    });
+  };
   const render2 = () => {
     $$('#rctb tbody tr', m.body).forEach(tr => {
       const t = todos.find(x => x.id === tr.dataset.id), al = N(aloc[t.id]), rest = N(t.saldo) - al;
-      tr.children[4].innerHTML = !al ? '<span class="tag n">—</span>' : rest <= 0 ? '<span class="tag g">✓ quitada</span>' : '<span class="tag a">parcial</span>';
+      tr.children[4].className = 'r money' + (rest > 0 && al ? ' neg' : '');
+      tr.children[4].textContent = al ? BRL(rest) : '—';
+      tr.children[5].innerHTML = !al ? '<span class="tag n">—</span>' : rest <= 0 ? '<span class="tag g">✓ quitada</span>' : '<span class="tag a">parcial</span>';
     });
   };
   const resumo = () => {
@@ -4153,10 +4173,14 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
     </div>`;
     $('[data-ok]', m.foot).disabled = sobra < 0 || val <= 0;
   };
-  const auto = () => {
-    let resta = N($('#rc_valor', m.body).value);
-    todos.forEach(t => { const usa = Math.min(resta, N(t.saldo)); aloc[t.id] = Math.round(usa * 100) / 100; resta -= usa; });
-    render();
+  const auto = (redesenhar = true) => {
+    let resta = Math.round(N($('#rc_valor', m.body).value) * 100) / 100;
+    ordemAloc.forEach(t => {
+      const usa = Math.max(0, Math.min(resta, N(t.saldo)));
+      aloc[t.id] = Math.round(usa * 100) / 100;
+      resta = Math.round((resta - usa) * 100) / 100;
+    });
+    if (redesenhar) render(); else { render2(); resumo(); }
   };
   /* ───────── modo por produto e quantidade ───────── */
   const somaPecas = () => pecas.reduce((a, i) =>
@@ -4222,7 +4246,11 @@ async function formRecebimento(tipoDevedor, pessoa, titulosIniciais) {
   const btnZerar = $('#rp_zerar', m.body);
   if (btnZerar) btnZerar.onclick = () => { pecas.forEach(i => qtdPagar[chave(i)] = 0); renderPecas(); };
 
-  $('#rc_valor', m.body).oninput = resumo;
+  /* Mudar o valor recebido redistribui sozinho. Sem isso, digitar um valor
+     menor deixava a alocação antiga maior que o recebido e o botão travava
+     em "excede o recebido" — que era o que impedia registrar pagamento
+     parcial. Quem quiser dividir à mão edita as linhas depois. */
+  $('#rc_valor', m.body).oninput = () => { auto(false); atualizarCampos(); };
   $('#rc_auto', m.body).onclick = auto;
   $('#rc_zerar', m.body).onclick = () => { todos.forEach(t => aloc[t.id] = 0); render(); };
   $('[data-x]', m.foot).onclick = m.fechar;
