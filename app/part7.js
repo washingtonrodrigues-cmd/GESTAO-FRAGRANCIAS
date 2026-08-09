@@ -38,7 +38,7 @@ ROTAS.financeiro = async (v) => {
     ]);
     const d = Array.isArray(dreArr) ? dreArr[0] : dreArr;
     ultimoDre = { d, i, f };
-    const CAT = { PERDA_ESTOQUE:'Perdas de estoque', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxas de pagamento',
+    const CAT = { PERDA_ESTOQUE:'Perdas de estoque', BAIXA_MOSTRUARIO:'Custo de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxas de pagamento',
       EMBALAGEM:'Embalagem', MARKETING:'Marketing', COMISSAO:'Comissões', OPERACIONAL:'Operacional', OUTRAS:'Outras' };
     const porCat = {}; desp.forEach(x => porCat[x.categoria] = (porCat[x.categoria] || 0) + N(x.valor));
     const confere = Math.abs(N(d.lucro_recebido) + N(d.lucro_a_receber) - N(d.lucro_bruto)) < 0.05;
@@ -154,6 +154,9 @@ const RELATORIOS = [
   { id:'parados', g:'Produtos', t:'Produtos parados', d:'Capital imobilizado sem giro' },
   { id:'clientes', g:'Pessoas', t:'Clientes', d:'Cadastro, histórico e saldo devedor' },
   { id:'revendedores', g:'Pessoas', t:'Revendedores', d:'Extrato consolidado de cada revendedor' },
+  { id:'rev-geral', g:'Revendedores', t:'Produtos do revendedor', d:'Tudo que ele já pegou, com a situação de cada peça' },
+  { id:'rev-pagos', g:'Revendedores', t:'Produtos pagos', d:'O que o revendedor já quitou, peça a peça' },
+  { id:'rev-pagar', g:'Revendedores', t:'Produtos a pagar', d:'O que o revendedor ainda deve, peça a peça' },
   { id:'vendas', g:'Vendas', t:'Vendas', d:'Receita, custo, lucro e margem por venda' },
   { id:'vendas-produto', g:'Vendas', t:'Vendas por produto', d:'Ranking de produtos com lucro' },
   { id:'lucratividade', g:'Vendas', t:'Lucratividade por produto', d:'Participação de cada produto no lucro' },
@@ -324,6 +327,40 @@ async function montarRelatorio(id, i, f) {
         { t:'Vencido', v:x => N(x.saldo_vencido), a:'r', m:1, h:x => N(x.saldo_vencido) ? `<b class="neg">${BRL(x.saldo_vencido)}</b>` : '—' }],
         totais:`Em posse ${BRL(sm(l, 'valor_custo_em_posse'))} · em aberto ${BRL(sm(l, 'saldo_aberto'))}` };
     }
+    /* Os três relatórios do revendedor são a mesma view com um filtro
+       diferente: cada linha é uma situação (pago, a pagar, devolvido, em
+       posse, amostra), com preço unitário e total. */
+    case 'rev-geral': case 'rev-pagos': case 'rev-pagar': {
+      let cs = sb.from('vw_itens_revendedor').select('*').gte('data', i).lte('data', f);
+      if (id === 'rev-pagos')  cs = cs.eq('situacao', 'PAGO');
+      if (id === 'rev-pagar')  cs = cs.eq('situacao', 'A_PAGAR');
+      const l = await q(cs.order('revendedor_nome').order('data').order('produto_nome'));
+      const geral = id === 'rev-geral';
+      const TAG = { PAGO:'g', A_PAGAR:'a', DEVOLVIDO:'b', PERDIDO:'r', EM_POSSE:'n', AMOSTRA:'n', AMOSTRA_FINALIZADA:'n' };
+      const cols = [
+        { t:'Revendedor', v:x => x.revendedor_nome },
+        { t:'Origem', v:x => x.documento },
+        { t:'Data', v:x => dBR(x.data) },
+        { t:'Código', v:x => x.produto_codigo },
+        { t:'Produto', v:x => x.produto_nome + (x.produto_tamanho ? ' · ' + x.produto_tamanho : '') }];
+      if (geral) cols.push({ t:'Situação', v:x => x.situacao_label, a:'c',
+        h:x => `<span class="tag ${TAG[x.situacao] || 'n'}">${esc(x.situacao_label)}</span>` });
+      cols.push(
+        { t:'Qtd', v:x => N(x.quantidade), a:'c', h:x => QTD(x.quantidade) },
+        { t:'Preço unit.', v:x => N(x.valor_unitario), a:'r', m:1, h:x => BRL(x.valor_unitario) },
+        { t:'Total', v:x => N(x.valor_total), a:'r', m:1, h:x => `<b>${BRL(x.valor_total)}</b>` });
+
+      const som = (sit) => l.filter(x => x.situacao === sit).reduce((a, x) => a + N(x.valor_total), 0);
+      const qsom = (sit) => l.filter(x => x.situacao === sit).reduce((a, x) => a + N(x.quantidade), 0);
+      const totais = geral
+        ? `Pago <b class="pos">${BRL(som('PAGO'))}</b> · a pagar <b class="neg">${BRL(som('A_PAGAR'))}</b> ·
+           devolvido ${BRL(som('DEVOLVIDO'))} · em posse ${BRL(som('EM_POSSE'))} ·
+           mostruário ${BRL(som('AMOSTRA'))} <span style="color:var(--mute)">(amostra não se cobra)</span>`
+        : id === 'rev-pagos'
+          ? `${QTD(qsom('PAGO'))} peça(s) · <b class="pos">${BRL(som('PAGO'))}</b> recebidos`
+          : `${QTD(qsom('A_PAGAR'))} peça(s) · <b class="neg">${BRL(som('A_PAGAR'))}</b> a receber`;
+      return { linhas:l, colunas:cols, totais };
+    }
     case 'vendas': {
       const l = await q(sb.from('vw_resultado_consolidado').select('*').gte('data_venda', i).lte('data_venda', f).order('data_venda', { ascending:false }));
       return { linhas:l, colunas:[
@@ -409,7 +446,7 @@ async function montarRelatorio(id, i, f) {
     }
     case 'despesas': {
       const l = await q(sb.from('despesas').select('*').is('deleted_at', null).gte('data_despesa', i).lte('data_despesa', f).order('data_despesa', { ascending:false }));
-      const CAT = { PERDA_ESTOQUE:'Perda de estoque', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
+      const CAT = { PERDA_ESTOQUE:'Perda de estoque', BAIXA_MOSTRUARIO:'Custo de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
         EMBALAGEM:'Embalagem', MARKETING:'Marketing', COMISSAO:'Comissão', OPERACIONAL:'Operacional', OUTRAS:'Outras' };
       return { linhas:l, colunas:[
         { t:'Nº', v:x => x.numero }, { t:'Data', v:x => dBR(x.data_despesa) },

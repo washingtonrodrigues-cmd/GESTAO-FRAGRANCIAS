@@ -80,6 +80,15 @@ async function formCompra(v) {
             <option value="VALOR">Proporcional ao valor (recomendado)</option>
             <option value="QUANTIDADE">Proporcional à quantidade</option></select>
             <div class="hint">Por valor evita que o item barato absorva o frete do caro</div></div>
+        </div>
+        <div class="grid-f f3" style="margin-top:14px">
+          <div><label>Data do pagamento</label>
+            <input class="inp" type="date" id="c_dtpag" value="${hoje()}">
+            <div class="hint">Quando o dinheiro sai — aparece em Despesas</div></div>
+          <div><label>Forma de pagamento</label><select class="inp" id="c_fpag">
+            <option value="">—</option>${selectOpts(S.formas)}</select></div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:9px">
+            <label class="chk" style="margin:0"><input type="checkbox" id="c_pago" checked> Já está paga</label></div>
         </div></div></div>
 
       <div class="card"><div class="card-h"><h3>Produtos</h3>
@@ -247,7 +256,9 @@ async function formCompra(v) {
         fornecedor_id: $('#c_forn_id').value, data_compra: $('#c_data').value,
         numero_documento: $('#c_doc').value.trim() || null, criterio_rateio: $('#c_crit').value,
         valor_frete: N($('#c_frete').value), valor_taxa_cartao: N($('#c_taxa').value),
-        outros_custos: N($('#c_outros').value), observacoes: $('#c_obs').value.trim() || null
+        outros_custos: N($('#c_outros').value), observacoes: $('#c_obs').value.trim() || null,
+        data_pagamento: $('#c_dtpag').value || null, pago: $('#c_pago').checked,
+        forma_pagamento_id: $('#c_fpag').value || null
       }).select().single());
       compraId = c.id;
       await q(sb.from('compra_itens').insert(itens.map(i => ({
@@ -266,13 +277,15 @@ async function formCompra(v) {
 }
 
 async function fichaCompra(v, id) {
-  const c = await q(sb.from('compras').select('*,fornecedores(*),compra_itens(*,produtos(codigo,nome,tamanho))').eq('id', id).single());
+  const c = await q(sb.from('compras').select('*,fornecedores(*),formas_pagamento(nome),compra_itens(*,produtos(codigo,nome,tamanho))').eq('id', id).single());
   crumb(`Compras › nº ${c.numero}`);
   const badge = { RASCUNHO:['a','Rascunho'], CONFIRMADO:['g','Confirmada'], CANCELADO:['r','Cancelada'] }[c.status];
   v.innerHTML = `
   <div class="page-head"><h1>Compra nº ${c.numero} <span class="tag ${badge[0]}">${badge[1]}</span>
     <small>${dBR(c.data_compra)} · ${esc(c.fornecedores?.nome || '—')}${c.numero_documento ? ' · doc ' + esc(c.numero_documento) : ''}</small></h1>
     <div class="acts"><a class="btn btn-s btn-sm" href="#compras">← Voltar</a>
+      ${c.status !== 'CANCELADO' ? '<button class="btn btn-p btn-sm" id="edItens">✎ Produtos da compra</button>' : ''}
+      ${c.status === 'CONFIRMADO' && !c.pago ? '<button class="btn btn-g btn-sm" id="pagBtn">✓ Marcar paga</button>' : ''}
       ${c.status === 'CONFIRMADO' ? '<button class="btn btn-d btn-sm" id="canBtn">Cancelar compra</button>' : ''}</div></div>
   ${c.status === 'CANCELADO' ? `<div class="alert bad"><span>⛔</span><div><b>Compra cancelada</b> em ${dBR(c.data_cancelamento)}.<br>Motivo: ${esc(c.motivo_cancelamento || '')}</div></div>` : ''}
   <div class="kpis k5">
@@ -301,10 +314,26 @@ async function fichaCompra(v, id) {
     </table></div>
     <div class="pager"><span>A soma dos rateios (${BRL(c.compra_itens.reduce((a, i) => a + N(i.rateio_acessorio), 0))})
       confere exatamente com os custos acessórios (${BRL(c.custo_acessorio)}) ✓</span></div></div>
+  ${c.status === 'CONFIRMADO' ? `<div class="card"><div class="card-h"><h3>Pagamento ao fornecedor</h3>
+    <span class="tag ${c.pago ? 'g' : c.data_pagamento && c.data_pagamento < hoje() ? 'r' : 'a'}">${
+      c.pago ? 'Paga' : c.data_pagamento ? (c.data_pagamento < hoje() ? 'Vencida' : 'A pagar') : 'Sem data'}</span></div>
+    <div class="card-b"><div class="sumbox">
+      <div class="sumrow"><span class="l">Data prevista / do pagamento</span>
+        <span>${c.data_pagamento ? dBR(c.data_pagamento) : '—'}</span></div>
+      <div class="sumrow"><span class="l">Forma</span><span>${esc(c.formas_pagamento?.nome || '—')}</span></div>
+      <div class="sumrow tot"><span class="l">Valor</span><span class="money">${BRL(c.custo_total)}</span></div>
+    </div>
+    <div class="hint" style="margin-top:10px">Esta compra aparece em <a href="#despesas">Despesas › Compras a pagar</a>.
+      Ela não entra como despesa no resultado: o custo da mercadoria vira CMV quando o produto é vendido.</div>
+    </div></div>` : ''}
   ${c.observacoes ? `<div class="card"><div class="card-b"><b style="font-size:12px;color:var(--mute)">OBSERVAÇÕES</b>
     <p style="margin-top:6px">${esc(c.observacoes)}</p></div></div>` : ''}`;
 
   $('#prBtn').onclick = () => imprimir(docCompra(c));
+  const eb = $('#edItens'); if (eb) eb.onclick = () => formItensCompra(c);
+  const pb = $('#pagBtn'); if (pb) pb.onclick = () => formPagarCompra({
+    id:c.id, numero:c.numero, data_compra:c.data_compra, data_pagamento:c.data_pagamento,
+    custo_total:c.custo_total, fornecedor_nome:c.fornecedores?.nome });
   const cb = $('#canBtn');
   if (cb) cb.onclick = async () => {
     const motivo = await confirmar({ titulo:`Cancelar compra nº ${c.numero}`, pedirMotivo:true, textoBotao:'Cancelar compra',
@@ -317,6 +346,107 @@ async function fichaCompra(v, id) {
   };
 }
 
+/* Incluir e excluir produto de uma compra, inclusive já confirmada.
+   O banco desfaz a entrada de estoque, refaz o rateio de frete e taxa e dá
+   entrada de novo — por isso o custo unitário de TODOS os itens muda. */
+function formItensCompra(c) {
+  const itens = c.compra_itens.map(i => ({ produto_id:i.produto_id, nome:i.produtos?.nome,
+    codigo:i.produtos?.codigo, qtd:String(N(i.quantidade)), vu:String(N(i.valor_unitario)) }));
+  const confirmada = c.status === 'CONFIRMADO';
+
+  const m = modal({ titulo:`Produtos da compra nº ${c.numero}`, largura:'wide',
+    corpo:`${confirmada ? `<div class="alert warn"><span>⚠</span><div>Esta compra <b>já está confirmada</b>.
+      Ao salvar, o sistema tira do estoque tudo o que esta compra tinha colocado, refaz o rateio de
+      frete e taxa e dá entrada de novo — então o <b>custo unitário de todos os produtos da nota muda</b>.
+      Se alguma unidade desta compra já foi vendida, a alteração é recusada.</div></div>`
+      : '<div class="alert info"><span>ℹ</span><div>Compra em rascunho: pode mexer à vontade.</div></div>'}
+      <div class="tw"><table class="itens-tb" id="ectb"><thead><tr>
+        <th style="width:40%">Produto</th><th style="width:16%">Quantidade</th>
+        <th style="width:20%">Valor unitário</th><th style="width:18%" class="r">Subtotal</th>
+        <th style="width:6%"></th></tr></thead><tbody></tbody></table></div>
+      <div style="margin-top:10px"><button class="btn btn-s btn-sm" id="ecAdd">+ Adicionar produto</button></div>
+      <div class="grid-f f3" style="margin-top:16px">
+        <div><label>Frete</label><input class="inp num" type="number" step="0.01" min="0" id="ec_frete" value="${N(c.valor_frete).toFixed(2)}"></div>
+        <div><label>Taxa do cartão</label><input class="inp num" type="number" step="0.01" min="0" id="ec_taxa" value="${N(c.valor_taxa_cartao).toFixed(2)}"></div>
+        <div><label>Outros custos</label><input class="inp num" type="number" step="0.01" min="0" id="ec_outros" value="${N(c.outros_custos).toFixed(2)}"></div>
+      </div>
+      <div id="ec_resumo" style="margin-top:16px"></div>`,
+    rodape:`<button class="btn btn-s" data-x>Cancelar</button>
+            <button class="btn btn-p" data-ok>Salvar produtos</button>` });
+
+  const resumo = () => {
+    const sub = itens.reduce((a, i) => a + N(i.qtd) * N(i.vu), 0);
+    const ace = N($('#ec_frete', m.body).value) + N($('#ec_taxa', m.body).value) + N($('#ec_outros', m.body).value);
+    const base = c.criterio_rateio === 'QUANTIDADE' ? itens.reduce((a, i) => a + N(i.qtd), 0) : sub;
+    $('#ec_resumo', m.body).innerHTML = `<div class="sumbox">
+      <div class="sumrow"><span class="l">Produtos</span><span class="money">${BRL(sub)}</span></div>
+      <div class="sumrow"><span class="l">Frete, taxa e outros</span><span class="money">${BRL(ace)}</span></div>
+      <div class="sumrow tot"><span class="l">Custo total da compra</span><span class="money">${BRL(sub + ace)}</span></div>
+    </div>
+    ${itens.length && base > 0 ? `<div class="tw" style="margin-top:12px"><table class="dt"><thead><tr>
+      <th>Produto</th><th class="r">Rateio</th><th class="r">Custo unitário final</th></tr></thead><tbody>
+      ${itens.map(i => { const peso = c.criterio_rateio === 'QUANTIDADE' ? N(i.qtd) : N(i.qtd) * N(i.vu);
+        const rat = ace * (peso / base);
+        return `<tr><td>${esc(i.nome || '—')}</td><td class="r money" style="color:var(--amber)">${BRL(rat)}</td>
+          <td class="r money"><b>${BRL(N(i.qtd) ? (N(i.qtd) * N(i.vu) + rat) / N(i.qtd) : 0)}</b></td></tr>`;
+      }).join('')}</tbody></table></div>
+      <div class="hint">Prévia do rateio por ${c.criterio_rateio === 'QUANTIDADE' ? 'quantidade' : 'valor'}.
+        O valor definitivo é calculado pelo banco ao salvar.</div>` : ''}`;
+    $('[data-ok]', m.foot).disabled = !itens.length;
+  };
+
+  const render = () => {
+    $('#ectb tbody', m.body).innerHTML = itens.map((i, k) => `<tr data-i="${k}">
+      <td><input class="inp p-busca" placeholder="Digite para buscar…" autocomplete="off" value="${esc(i.nome || '')}">
+        ${i.codigo ? `<span style="display:block;font-size:11px;color:var(--mute)" class="num">${esc(i.codigo)}</span>` : ''}</td>
+      <td><input class="inp num q" type="number" min="0.001" step="1" value="${esc(i.qtd)}"></td>
+      <td><input class="inp num vu" type="number" min="0" step="0.01" value="${esc(i.vu)}"></td>
+      <td class="r money sub">${BRL(N(i.qtd) * N(i.vu))}</td>
+      <td class="c"><button class="btn btn-ghost btn-sm rm" title="Remover">✕</button></td></tr>`).join('');
+    $$('#ectb tbody tr', m.body).forEach(tr => {
+      const k = +tr.dataset.i, inp = $('.p-busca', tr);
+      const escolher = (p) => { itens[k].produto_id = p.id; itens[k].nome = p.nome; itens[k].codigo = p.codigo;
+        if (!N(itens[k].vu)) itens[k].vu = String(N(p.ultimo_custo) || N(p.custo_medio) || '');
+        render(); resumo(); };
+      autocomplete(inp, buscaProduto, escolher, fmtProd,
+        { aoCriar: (termo) => formProduto(null, escolher, { nome: termo }) });
+      $('.q', tr).oninput = (e) => { itens[k].qtd = e.target.value;
+        $('.sub', tr).textContent = BRL(N(itens[k].qtd) * N(itens[k].vu)); resumo(); };
+      $('.vu', tr).oninput = (e) => { itens[k].vu = e.target.value;
+        $('.sub', tr).textContent = BRL(N(itens[k].qtd) * N(itens[k].vu)); resumo(); };
+      $('.rm', tr).onclick = () => { itens.splice(k, 1); render(); resumo(); };
+    });
+    resumo();
+  };
+
+  $('#ecAdd', m.body).onclick = () => { itens.push({ qtd:'', vu:'' }); render();
+    setTimeout(() => { const l = $$('#ectb tbody .p-busca', m.body).pop(); if (l) l.focus(); }, 40); };
+  ['#ec_frete','#ec_taxa','#ec_outros'].forEach(x => $(x, m.body).addEventListener('input', resumo));
+  $('[data-x]', m.foot).onclick = m.fechar;
+
+  $('[data-ok]', m.foot).onclick = async (ev) => {
+    const b = ev.target;
+    if (!itens.length) return bad('Sem produtos', 'A compra precisa de ao menos um produto.');
+    for (const i of itens) {
+      if (!i.produto_id) return bad('Produto não selecionado',
+        'Em cada linha, digite o nome e clique no produto na lista que aparece.');
+      if (N(i.qtd) <= 0) return bad('Quantidade inválida', `Informe a quantidade de ${i.nome || 'todos os produtos'}.`);
+    }
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Salvando…';
+    try {
+      await rpc('fn_editar_itens_compra', { p_compra_id:c.id,
+        p_itens: itens.map(i => ({ produto_id:i.produto_id, quantidade:N(i.qtd), valor_unitario:N(i.vu) })),
+        p_valor_frete: N($('#ec_frete', m.body).value),
+        p_valor_taxa: N($('#ec_taxa', m.body).value),
+        p_outros_custos: N($('#ec_outros', m.body).value) });
+      m.fechar(); ok('Produtos atualizados', 'Estoque, rateio e custo médio recalculados.');
+      navegar();
+    } catch (e) { bad('Não foi possível salvar', erroAmigavel(e));
+      b.disabled = false; b.textContent = 'Salvar produtos'; }
+  };
+  render();
+}
+
 /* ═══════════════ ESTOQUE (Prompt 6) ═══════════════ */
 ROTAS.estoque = async (v) => {
   crumb('Estoque');
@@ -327,6 +457,7 @@ ROTAS.estoque = async (v) => {
   const t = (f) => prods.reduce((a, p) => a + N(p[f]), 0);
   const TIPOS = { ENTRADA_COMPRA:'Entrada por compra', SAIDA_VENDA:'Venda', SAIDA_REMESSA:'Envio a revendedor',
     RETORNO_DEVOLUCAO:'Devolução', BAIXA_VENDA_CONSIGNADA:'Venda em consignação', BAIXA_PERDA:'Perda',
+    BAIXA_MOSTRUARIO:'Mostruário finalizado',
     RESERVA:'Reserva', LIBERACAO_RESERVA:'Liberação', AJUSTE_POSITIVO:'Ajuste (entrada)',
     AJUSTE_NEGATIVO:'Ajuste (saída)', ESTORNO:'Estorno' };
 
@@ -339,7 +470,7 @@ ROTAS.estoque = async (v) => {
     <div class="kpi blue"><div class="lab">Disponível</div><div class="val">${BRL(t('valor_estoque_disponivel'))}</div>
       <div class="sub">${QTD(t('qtd_disponivel'))} unidades</div></div>
     <div class="kpi amber"><div class="lab">Mostruário</div><div class="val">${BRL(t('valor_mostruario'))}</div>
-      <div class="sub">${QTD(t('qtd_mostruario'))} unidades</div></div>
+      <div class="sub">${QTD(t('qtd_mostruario'))} un · custo já é despesa</div></div>
     <div class="kpi violet"><div class="lab">Consignado</div><div class="val">${BRL(t('valor_consignado'))}</div>
       <div class="sub">${QTD(t('qtd_consignado'))} unidades</div></div>
     <div class="kpi"><div class="lab">Investimento total</div><div class="val">${BRL(t('valor_total_custo'))}</div></div>

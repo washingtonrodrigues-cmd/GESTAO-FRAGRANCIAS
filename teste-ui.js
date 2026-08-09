@@ -38,7 +38,7 @@ const dash = { total_compras:2280, total_custo_produtos:2200, total_frete:50, to
   qtd_vendas:3, total_descontos:0, ticket_medio:990, lucro_bruto:1488, lucro_recebido:816, lucro_a_receber:672,
   total_despesas:114, lucro_liquido:1374, margem_bruta_percentual:50.1, total_a_receber:1470, total_vencido:250,
   total_a_vencer_7d:250, qtd_titulos_vencidos:1, total_recebido_caixa:1500, inadimplencia_percentual:17,
-  qtd_mostruarios_antigos:1, qtd_produtos_parados:0 };
+  qtd_mostruarios_antigos:1, qtd_produtos_parados:0, total_custo_mostruario:216 };
 
 const titulo = { id:TIT, numero:1, origem:'VENDA', venda_id:VID, prestacao_id:null, tipo_devedor:'CLIENTE',
   cliente_id:CID, revendedor_id:null, numero_parcela:1, total_parcelas:4, valor_original:250, valor_recebido:0,
@@ -104,17 +104,59 @@ const DADOS = {
   vw_itens_em_posse: [posse,
     { ...posse, remessa_id:'r2', remessa_numero:2, tipo_remessa:'MOSTRUARIO',
       remessa_item_id:'ri2', qtd_em_posse:2, valor_custo_total:216, valor_revenda_total:360 }],
+  venda_devolucoes: [],
+  creditos: [], credito_usos: [],
+  vw_creditos: [{ id:'cr1', numero:1, tipo_devedor:'REVENDEDOR', cliente_id:null, revendedor_id:RID,
+    devedor_nome:'Ana Paula Ferreira', devedor_whatsapp:'31977776666', origem_tabela:'vendas', origem_id:VID,
+    valor:300, valor_utilizado:0, saldo:300, data_credito:'2026-08-01',
+    motivo:'Devolução de produto já pago — venda nº 1', observacoes:null, created_at:'2026-08-01T10:00:00Z' }],
+  vw_compras_a_pagar: [{ id:COM, numero:1, data_compra:'2026-07-01', data_pagamento:'2026-08-20', pago:false,
+    fornecedor_nome:'AMERICAN', forma_pagamento:null, subtotal_produtos:1000, valor_frete:50,
+    valor_taxa_cartao:30, outros_custos:0, custo_total:1080, numero_documento:'NF 123', observacoes:null,
+    situacao:'A_VENCER', dias_para_pagar:12 }],
+  vw_itens_revendedor: [
+    { revendedor_id:RID, revendedor_nome:'Ana Paula Ferreira', revendedor_whatsapp:'31977776666',
+      origem:'VENDA', origem_id:VID, origem_numero:1, data:'2026-07-10', documento:'Venda nº 1',
+      produto_id:PID, produto_codigo:'336', produto_nome:'MY WAY INTENSE', produto_tamanho:'100 ml',
+      situacao:'PAGO', situacao_label:'Pago', quantidade:3, valor_unitario:150, valor_total:450,
+      cobravel:true, valor_cobravel:450 },
+    { revendedor_id:RID, revendedor_nome:'Ana Paula Ferreira', revendedor_whatsapp:'31977776666',
+      origem:'VENDA', origem_id:VID, origem_numero:1, data:'2026-07-10', documento:'Venda nº 1',
+      produto_id:PID, produto_codigo:'336', produto_nome:'MY WAY INTENSE', produto_tamanho:'100 ml',
+      situacao:'A_PAGAR', situacao_label:'A pagar', quantidade:5, valor_unitario:150, valor_total:750,
+      cobravel:true, valor_cobravel:750 },
+    { revendedor_id:RID, revendedor_nome:'Ana Paula Ferreira', revendedor_whatsapp:'31977776666',
+      origem:'VENDA', origem_id:VID, origem_numero:1, data:'2026-07-12', documento:'Venda nº 1',
+      produto_id:PID, produto_codigo:'336', produto_nome:'MY WAY INTENSE', produto_tamanho:'100 ml',
+      situacao:'DEVOLVIDO', situacao_label:'Devolvido', quantidade:2, valor_unitario:150, valor_total:300,
+      cobravel:false, valor_cobravel:0 },
+    { revendedor_id:RID, revendedor_nome:'Ana Paula Ferreira', revendedor_whatsapp:'31977776666',
+      origem:'CONSIGNACAO', origem_id:null, origem_numero:1, data:'2026-05-20', documento:'Remessa nº 1',
+      produto_id:PID, produto_codigo:'336', produto_nome:'MY WAY INTENSE', produto_tamanho:'100 ml',
+      situacao:'EM_POSSE', situacao_label:'Em posse', quantidade:6, valor_unitario:180, valor_total:1080,
+      cobravel:false, valor_cobravel:0 },
+    { revendedor_id:RID, revendedor_nome:'Ana Paula Ferreira', revendedor_whatsapp:'31977776666',
+      origem:'MOSTRUARIO', origem_id:null, origem_numero:2, data:'2026-06-01', documento:'Remessa nº 2',
+      produto_id:PID, produto_codigo:'336', produto_nome:'MY WAY INTENSE', produto_tamanho:'100 ml',
+      situacao:'AMOSTRA', situacao_label:'Mostruário', quantidade:2, valor_unitario:180, valor_total:360,
+      cobravel:false, valor_cobravel:0 }],
   vw_titulos_receber: [titulo,
+    { ...titulo, id:'tr1', numero:4, origem:'VENDA', tipo_devedor:'REVENDEDOR', cliente_id:null,
+      revendedor_id:RID, devedor_nome:'Ana Paula Ferreira', devedor_whatsapp:'31977776666',
+      numero_parcela:1, total_parcelas:1, valor_original:400, valor_recebido:0, saldo:400,
+      data_vencimento:'2026-08-20', situacao:'ABERTO', situacao_real:'A_VENCER',
+      dias_atraso:-12, dias_para_vencer:12 },
     { ...titulo, id:'t2', numero:2, numero_parcela:2, data_vencimento:'2026-08-15', situacao_real:'A_VENCER', dias_atraso:-13, dias_para_vencer:13 },
     { ...titulo, id:'t3', numero:3, numero_parcela:3, valor_recebido:250, saldo:0, situacao:'PAGO',
       situacao_real:'PAGO', data_quitacao:'2026-07-20', lucro_recebido:136, lucro_a_receber:0 }],
   titulos_receber: [titulo],
+  __titRev: null,
   vw_extrato_revendedor: [{ id:RID, codigo:1, nome:'Ana Paula Ferreira', whatsapp:'31977776666',
     telefone:'31977776666', cidade:'Contagem', estado:'MG', limite_credito:0, qtd_em_posse:6,
     valor_custo_em_posse:648, valor_revenda_em_posse:1080, dias_max_em_posse:74, qtd_total_recebida:10,
     qtd_vendida:4, qtd_devolvida:0, qtd_perdida:0, valor_vendido_consignacao:720, valor_vendido_direto:0,
     valor_vendido_total:720, total_devido:720, total_pago:0, saldo_aberto:720, saldo_vencido:0,
-    ultimo_pagamento:null, ultimo_acerto:'2026-07-30', dias_desde_ultimo_acerto:3 }],
+    ultimo_pagamento:null, ultimo_acerto:'2026-07-30', dias_desde_ultimo_acerto:3, saldo_credito:300 }],
   vw_resultado_consolidado: [
     { id:VID, numero:1, data_venda:'2026-07-10', tipo:'CONSUMIDOR', comprador:'Maria Silva Santos',
       subtotal:1250, desconto_valor:0, receita_liquida:1250, cmv:570, lucro_bruto:680, margem_percentual:54.4,
@@ -127,15 +169,17 @@ const DADOS = {
       valor_recebido:0, valor_em_aberto:720, lucro_recebido:0, lucro_a_receber:264 }],
   vendas: [{ id:VID, numero:1, tipo:'CONSUMIDOR', cliente_id:CID, revendedor_id:null, data_venda:'2026-07-10',
     subtotal:1250, desconto_valor:0, desconto_percentual:0, valor_total:1250, custo_total:570, lucro_bruto:680,
+    valor_devolvido:0, custo_devolvido:0,
     forma_pagamento_id:'f1', qtd_parcelas:1, status:'CONFIRMADO', observacoes:null,
     clientes:{ id:CID, nome:'Maria Silva Santos', cpf:'11144477735', whatsapp:'31999998888', telefone:'31999998888', endereco:'Rua das Flores', numero:'123', bairro:'Centro', cidade:'Belo Horizonte', estado:'MG' },
     revendedores:null, formas_pagamento:{ nome:'PIX' },
     venda_itens:[{ id:'vi1', venda_id:VID, produto_id:PID, quantidade:5, preco_unitario:250, desconto_item:0,
-      subtotal:1250, custo_unitario_praticado:114, custo_total_item:570, lucro_item:680,
+      subtotal:1250, custo_unitario_praticado:114, custo_total_item:570, lucro_item:680, qtd_devolvida:0,
       produtos:{ codigo:'336', nome:'MY WAY INTENSE', tamanho:'100 ml' } }] }],
   compras: [{ id:COM, numero:1, fornecedor_id:'fo1', data_compra:'2026-07-01', numero_documento:'NF 123',
     subtotal_produtos:1000, valor_frete:50, valor_taxa_cartao:30, outros_custos:0, custo_acessorio:80,
     custo_total:1080, criterio_rateio:'VALOR', status:'CONFIRMADO', observacoes:null,
+    data_pagamento:'2026-08-20', pago:false, forma_pagamento_id:null, formas_pagamento:null,
     fornecedores:{ id:'fo1', nome:'AMERICAN', documento:'12345678000199' },
     compra_itens:[{ id:'ci1', compra_id:COM, produto_id:PID, quantidade:10, valor_unitario:100, subtotal:1000,
       rateio_acessorio:80, custo_total_item:1080, custo_unitario_final:108,
@@ -147,8 +191,15 @@ const DADOS = {
     qtd_total_enviada:10, qtd_em_posse:6, status:'CONFIRMADO', encerrada:false, observacoes:null,
     revendedores:{ id:RID, nome:'Ana Paula Ferreira', cpf:'52998224725', telefone:'31977776666', cidade:'Contagem', estado:'MG' },
     remessa_itens:[{ id:RIT, remessa_id:REM, produto_id:PID, quantidade:10, valor_custo_unitario:108,
-      valor_revenda_unitario:180, qtd_em_posse:6, qtd_vendida:4, qtd_devolvida:0, qtd_perdida:0,
-      produtos:{ codigo:'336', nome:'MY WAY INTENSE', tamanho:'100 ml' } }] }],
+      valor_revenda_unitario:180, qtd_em_posse:6, qtd_vendida:4, qtd_devolvida:0, qtd_perdida:0, qtd_baixada:0,
+      produtos:{ codigo:'336', nome:'MY WAY INTENSE', tamanho:'100 ml' } }] },
+    { id:'r2', numero:2, revendedor_id:RID, tipo:'MOSTRUARIO', data_envio:'2026-06-01',
+      data_prevista_acerto:null, data_encerramento:null, valor_custo_total:216, valor_revenda_total:360,
+      qtd_total_enviada:2, qtd_em_posse:2, status:'CONFIRMADO', encerrada:false, observacoes:null,
+      revendedores:{ id:RID, nome:'Ana Paula Ferreira', cpf:'52998224725', telefone:'31977776666', cidade:'Contagem', estado:'MG' },
+      remessa_itens:[{ id:'ri2', remessa_id:'r2', produto_id:PID, quantidade:2, valor_custo_unitario:108,
+        valor_revenda_unitario:180, qtd_em_posse:2, qtd_vendida:0, qtd_devolvida:0, qtd_perdida:0, qtd_baixada:0,
+        produtos:{ codigo:'336', nome:'MY WAY INTENSE', tamanho:'100 ml' } }] }],
   remessa_itens: [], prestacoes_contas: [{ id:'pc1', numero:1, revendedor_id:RID, data_acerto:'2026-07-30',
     qtd_vendida:4, qtd_devolvida:0, qtd_perdida:0, valor_vendido:720, custo_vendido:456, valor_devolvido:0,
     valor_perdas:0, cobrar_perdas:true, valor_devido:720, lucro_bruto:264, qtd_parcelas:1, status:'CONFIRMADO',
@@ -201,6 +252,18 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
     if (m) {
       const t = m[1];
       let d = DADOS[t] !== undefined ? DADOS[t] : [];
+      /* Honra os filtros `?coluna=eq.valor`: sem isso qualquer ficha abriria
+         sempre o primeiro registro e um relatório filtrado mostraria tudo —
+         o teste passaria por engano. */
+      const qs = decodeURIComponent(url).split('?')[1] || '';
+      if (Array.isArray(d)) {
+        for (const par of qs.split('&')) {
+          const mm = par.match(/^([a-z_]+)=eq\.(.+)$/);
+          if (!mm || ['select','order','limit','offset'].includes(mm[1])) continue;
+          const sel = d.filter(x => String(x[mm[1]]) === mm[2]);
+          if (sel.length || mm[1] !== 'id') d = sel;
+        }
+      }
       const single = (route.request().headers()['accept'] || '').includes('vnd.pgrst.object');
       if (single && Array.isArray(d)) d = d[0] || {};
       if (single && !Array.isArray(d)) { /* objeto direto */ }
@@ -643,7 +706,7 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
   else { P('  ✗ troca de aba não funcionou'); falhas++; }
   await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
 
-  P('\n── Mostruário: baixa como custo da empresa ──');
+  P('\n── Mostruário: finalizar em vez de baixar ──');
   await page.evaluate(() => location.hash = '#revendedores/44444444-4444-4444-4444-444444444444');
   await page.waitForTimeout(1600);
   const btnPc = await page.$('#pcBtn') || await page.$('[data-pc]');
@@ -653,18 +716,21 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
     const linhas = await page.evaluate(() => [...document.querySelectorAll('#pctb tbody tr')].map(tr => ({
       rotulo: tr.querySelector('.tag')?.textContent.trim(),
       vendaTravada: tr.querySelector('.qv')?.disabled,
+      perdaTravada: tr.querySelector('.qp')?.disabled,
       baixaTravada: tr.querySelector('.qb')?.disabled })));
     P('  ' + JSON.stringify(linhas));
     const cons = linhas.find(l => l.rotulo === 'Consignação');
     const most = linhas.find(l => l.rotulo === 'Mostruário');
     for (const [rot, ok2] of [
       ['consignação: pode vender', cons && cons.vendaTravada === false],
-      ['consignação: não pode dar baixa', cons && cons.baixaTravada === true],
+      ['consignação: pode registrar perda', cons && cons.perdaTravada === false],
+      ['consignação: não pode finalizar', cons && cons.baixaTravada === true],
       ['mostruário: NÃO pode vender', most && most.vendaTravada === true],
-      ['mostruário: pode dar baixa', most && most.baixaTravada === false]
+      ['mostruário: NÃO pode registrar perda', most && most.perdaTravada === true],
+      ['mostruário: pode finalizar', most && most.baixaTravada === false]
     ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
 
-    // preenche a baixa do mostruário e confere o resumo e o payload
+    // finaliza 2 amostras e confere o resumo e o payload
     await page.evaluate(() => {
       const tr = [...document.querySelectorAll('#pctb tbody tr')]
         .find(t => t.querySelector('.tag')?.textContent.trim() === 'Mostruário');
@@ -672,12 +738,18 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
     });
     await page.waitForTimeout(600);
     const resumo = (await page.textContent('#pc_resumo')).replace(/\s+/g, ' ');
-    P('  resumo: ' + resumo.slice(0, 200));
-    if (/Baixa de mostru/i.test(resumo) && /216,00/.test(resumo))
-      P('  ✓ resumo mostra a baixa como custo da empresa (2 × R$ 108,00 = R$ 216,00)');
-    else { P('  ✗ resumo não refletiu a baixa'); falhas++; }
-    if (/não cobrado|não é cobrado/i.test(resumo)) P('  ✓ deixa claro que o revendedor não paga');
+    P('  resumo: ' + resumo.slice(0, 260));
+    if (/finalizad/i.test(resumo) && /216,00/.test(resumo))
+      P('  ✓ resumo mostra as 2 amostras finalizadas (2 × R$ 108,00 = R$ 216,00)');
+    else { P('  ✗ resumo não refletiu a finalização'); falhas++; }
+    if (/já foi lançado|já foi lancado/i.test(resumo))
+      P('  ✓ deixa claro que o custo já foi lançado no envio, sem despesa nova');
+    else { P('  ✗ falta dizer que o custo já foi lançado no envio'); falhas++; }
+    if (/não é cobrado|não cobrado/i.test(resumo)) P('  ✓ deixa claro que o revendedor não paga');
     else { P('  ✗ falta dizer que não é cobrado do revendedor'); falhas++; }
+    if (!/Resultado líquido do acerto/i.test(resumo))
+      P('  ✓ finalização não mexe no resultado do acerto');
+    else { P('  ✗ finalização não deveria entrar no resultado do acerto'); falhas++; }
 
     const envio = await page.evaluate(async () => {
       let cap = null; const orig = window.rpc;
@@ -686,11 +758,203 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
       await new Promise(r => setTimeout(r, 600));
       window.rpc = orig; return cap;
     });
-    const item = envio?.args?.p_itens?.find(i => Number(i.baixada) > 0);
+    const item = envio?.args?.p_itens?.find(i => Number(i.finalizada) > 0);
     P('  payload: ' + JSON.stringify(envio?.args?.p_itens));
-    if (envio?.fn === 'fn_prestar_contas' && item && item.baixada === 2 && item.vendida === 0)
-      P('  ✓ envia baixada=2 e vendida=0 para o banco');
-    else { P('  ✗ payload da baixa incorreto'); falhas++; }
+    if (envio?.fn === 'fn_prestar_contas' && item && item.finalizada === 2 && item.vendida === 0)
+      P('  ✓ envia finalizada=2 e vendida=0 para o banco');
+    else { P('  ✗ payload da finalização incorreto'); falhas++; }
+    await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
+  }
+
+  P('\n── Ações diretas na remessa de mostruário ──');
+  await page.evaluate(() => location.hash = '#mostruarios/r2');
+  await page.waitForTimeout(1500);
+  const ficha = await page.evaluate(() => ({
+    texto: document.querySelector('#view')?.textContent.replace(/\s+/g, ' ') || '',
+    finalizar: !!document.querySelector('[data-fin]'),
+    devolver: !!document.querySelector('[data-dev]') }));
+  for (const [rot, ok2] of [
+    ['tem botão Finalizar', ficha.finalizar],
+    ['tem botão Devolver', ficha.devolver],
+    ['avisa que o custo já entrou como despesa no envio', /já entrou como despesa/i.test(ficha.texto)],
+    ['avisa que a devolução estorna', /estornad/i.test(ficha.texto)],
+    ['coluna Finalizado no lugar de Perdido', /Finalizado/.test(ficha.texto) && !/Perdido/.test(ficha.texto)]
+  ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+
+  for (const [rot, sel, fnEsperada, campo] of [
+    ['Finalizar', '[data-fin]', 'fn_finalizar_mostruario', 'finalizar'],
+    ['Devolver',  '[data-dev]', 'fn_devolver_mostruario',  'devolver']
+  ]) {
+    const b = await page.$(sel);
+    if (!b) { P(`  ✗ botão ${rot} ausente`); falhas++; continue; }
+    await b.click(); await page.waitForTimeout(700);
+    const qtdPadrao = await page.evaluate(() => document.querySelector('#bm_q')?.value);
+    const chamada = await page.evaluate(async () => {
+      let cap = null; const orig = window.rpc;
+      window.rpc = async (fn, args) => { cap = { fn, args }; throw new Error('parar aqui'); };
+      document.querySelector('.modal-f [data-ok]').click();
+      await new Promise(r => setTimeout(r, 600));
+      window.rpc = orig; return cap;
+    });
+    P(`  ${rot}: qtd padrão=${qtdPadrao} · ` + JSON.stringify(chamada));
+    if (chamada?.fn === fnEsperada && chamada.args.p_remessa_item_id === 'ri2'
+        && Number(chamada.args.p_quantidade) === 2)
+      P(`  ✓ ${rot} chama ${fnEsperada} com as 2 un em posse`);
+    else { P(`  ✗ ${rot} não chamou ${fnEsperada} corretamente`); falhas++; }
+    await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
+  }
+
+  P('\n── Devolução de produto vendido ──');
+  await page.evaluate(id => location.hash = '#vendas/' + id, VID);
+  await page.waitForTimeout(1500);
+  const topo = await page.evaluate(() => !!document.querySelector('#devBtn'));
+  if (topo) P('  ✓ atalho "Devolver produto" no topo da venda');
+  else { P('  ✗ falta o atalho no topo da venda'); falhas++; }
+  const temDev = await page.$('[data-dv]');
+  if (!temDev) { P('  ✗ botão Devolver não aparece na ficha da venda'); falhas++; }
+  else {
+    await temDev.click(); await page.waitForTimeout(700);
+    const cx = await page.evaluate(() => ({
+      qtd: document.querySelector('#dv_q')?.value,
+      resumo: (document.querySelector('#dv_resumo')?.textContent || '').replace(/\s+/g,' ') }));
+    P('  ' + JSON.stringify(cx));
+    for (const [rot, ok2] of [
+      ['abre com as 5 unidades da venda', cx.qtd === '5'],
+      ['mostra o valor da devolução (5 × R$ 250,00)', /1\.250,00/.test(cx.resumo)],
+      ['mostra quanto abate do que ele deve', /Abate do que ele deve/.test(cx.resumo)],
+      ['mostra quanto vira crédito', /crédito/i.test(cx.resumo)]
+    ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+
+    await page.evaluate(() => { const e = document.querySelector('#dv_q'); e.value = '2'; e.dispatchEvent(new Event('input')); });
+    await page.waitForTimeout(400);
+    const r2 = (await page.textContent('#dv_resumo')).replace(/\s+/g,' ');
+    P('  2 un: ' + r2.slice(0, 180));
+    if (/500,00/.test(r2)) P('  ✓ recalcula para 2 × R$ 250,00 = R$ 500,00');
+    else { P('  ✗ não recalculou o valor'); falhas++; }
+
+    const chamada = await page.evaluate(async () => {
+      let cap = null; const orig = window.rpc;
+      window.rpc = async (fn, args) => { cap = { fn, args }; throw new Error('parar aqui'); };
+      document.querySelector('.modal-f [data-ok]').click();
+      await new Promise(r => setTimeout(r, 600));
+      window.rpc = orig; return cap;
+    });
+    P('  RPC: ' + JSON.stringify(chamada));
+    if (chamada?.fn === 'fn_devolver_item_venda' && Number(chamada.args.p_quantidade) === 2)
+      P('  ✓ chama fn_devolver_item_venda com 2 unidades');
+    else { P('  ✗ RPC da devolução incorreta'); falhas++; }
+    await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
+  }
+
+  P('\n── Relatórios do revendedor ──');
+  for (const [id, esperado] of [
+    ['rev-geral', /Pago/],
+    ['rev-pagos', /450,00/],
+    ['rev-pagar', /750,00/]
+  ]) {
+    await page.evaluate(r => location.hash = '#relatorios/' + r, id);
+    await page.waitForTimeout(1400);
+    const txt = (await page.textContent('#view')).replace(/\s+/g,' ');
+    const linhas = await page.evaluate(() => document.querySelectorAll('#rConteudo tbody tr').length);
+    P(`  ${id}: ${linhas} linha(s) · ${txt.slice(txt.indexOf('Total') >= 0 ? 0 : 0, 150)}`);
+    if (linhas > 0 && esperado.test(txt)) P('  ✓ ' + id + ' carrega com preço unitário e total');
+    else { P('  ✗ ' + id + ' não trouxe o esperado'); falhas++; }
+  }
+  {
+    const geral = await page.evaluate(async () => { location.hash = '#relatorios/rev-geral';
+      await new Promise(r => setTimeout(r, 1400));
+      return (document.querySelector('#view').textContent || '').replace(/\s+/g,' '); });
+    for (const [rot, ok2] of [
+      ['mostra pago', /Pago/.test(geral)],
+      ['mostra a pagar', /A pagar/.test(geral)],
+      ['mostra devolvido', /Devolvido/.test(geral)],
+      ['mostra em posse', /Em posse/.test(geral)],
+      ['mostra mostruário', /Mostruário/.test(geral)],
+      ['avisa que amostra não se cobra', /amostra não se cobra/i.test(geral)]
+    ]) { if (ok2) P('  ✓ geral ' + rot); else { P('  ✗ geral ' + rot); falhas++; } }
+  }
+
+  P('\n── Compras: incluir, excluir e data de pagamento ──');
+  await page.evaluate(id => location.hash = '#compras/' + id, COM);
+  await page.waitForTimeout(1500);
+  const fc = await page.evaluate(() => ({
+    editar: !!document.querySelector('#edItens'),
+    pagar: !!document.querySelector('#pagBtn'),
+    texto: (document.querySelector('#view').textContent || '').replace(/\s+/g,' ') }));
+  for (const [rot, ok2] of [
+    ['tem botão de editar produtos', fc.editar],
+    ['tem botão de marcar paga', fc.pagar],
+    ['mostra o bloco de pagamento ao fornecedor', /Pagamento ao fornecedor/.test(fc.texto)],
+    ['explica que compra não é despesa', /não entra como despesa/i.test(fc.texto)]
+  ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+
+  if (fc.editar) {
+    await page.click('#edItens'); await page.waitForTimeout(800);
+    const ed = await page.evaluate(() => ({
+      linhas: document.querySelectorAll('#ectb tbody tr').length,
+      aviso: (document.querySelector('.modal-b')?.textContent || '').replace(/\s+/g,' '),
+      frete: document.querySelector('#ec_frete')?.value }));
+    P('  ' + JSON.stringify(ed).slice(0, 260));
+    for (const [rot, ok2] of [
+      ['carrega o item existente', ed.linhas === 1],
+      ['traz o frete atual', ed.frete === '50.00'],
+      ['avisa que o custo de todos os produtos muda', /custo unitário de todos/i.test(ed.aviso)]
+    ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+
+    // remove a única linha → botão salvar precisa travar
+    await page.evaluate(() => document.querySelector('#ectb tbody .rm').click());
+    await page.waitForTimeout(300);
+    const travado = await page.evaluate(() => document.querySelector('.modal-f [data-ok]').disabled);
+    if (travado) P('  ✓ sem produto nenhum, não deixa salvar');
+    else { P('  ✗ deixou salvar compra sem produto'); falhas++; }
+
+    await page.evaluate(() => document.querySelector('#ecAdd').click());
+    await page.waitForTimeout(300);
+    const voltou = await page.evaluate(() => document.querySelectorAll('#ectb tbody tr').length);
+    if (voltou === 1) P('  ✓ "Adicionar produto" cria a linha de volta');
+    else { P('  ✗ não adicionou linha'); falhas++; }
+    await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
+  }
+
+  P('\n── Despesas: aba de compras a pagar ──');
+  await page.evaluate(() => location.hash = '#despesas');
+  await page.waitForTimeout(1500);
+  const dsp = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.tabs [data-t]')].find(x => x.dataset.t === 'comp');
+    if (b) b.click();
+    return { temAba: !!b,
+      texto: (document.querySelector('#view').textContent || '').replace(/\s+/g,' '),
+      linhas: document.querySelectorAll('#ctb tr').length,
+      marcar: !!document.querySelector('[data-pg]') };
+  });
+  for (const [rot, ok2] of [
+    ['tem a aba Compras a pagar', dsp.temAba],
+    ['lista a compra', dsp.linhas >= 1],
+    ['tem botão de marcar como paga', dsp.marcar],
+    ['explica que compra não é despesa', /Compra não é despesa/i.test(dsp.texto)],
+    ['mostra o total de compras a pagar', /Compras a pagar/.test(dsp.texto)]
+  ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+
+  P('\n── Crédito de devolução ──');
+  await page.evaluate(() => location.hash = '#receber');
+  await page.waitForTimeout(1500);
+  const cr = await page.evaluate(() => ({
+    botao: !!document.querySelector('[data-cr]'),
+    kpi: (document.querySelector('#view').textContent || '').replace(/\s+/g,' ') }));
+  for (const [rot, ok2] of [
+    ['mostra o total em crédito', /em crédito de devolução/.test(cr.kpi)],
+    ['oferece usar o crédito numa parcela', cr.botao]
+  ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+  if (cr.botao) {
+    await page.click('[data-cr]'); await page.waitForTimeout(800);
+    const uc = await page.evaluate(() => ({
+      valor: document.querySelector('#cr_v')?.value,
+      texto: (document.querySelector('.modal-b')?.textContent || '').replace(/\s+/g,' ') }));
+    P('  ' + JSON.stringify(uc).slice(0, 220));
+    if (uc.valor === '300.00') P('  ✓ propõe usar R$ 300,00 (todo o crédito, que cabe na parcela de R$ 400,00)');
+    else { P('  ✗ valor proposto errado: ' + uc.valor); falhas++; }
+    if (/não é entrada de dinheiro/i.test(uc.texto)) P('  ✓ deixa claro que não é entrada de caixa');
+    else { P('  ✗ falta dizer que não entra no caixa'); falhas++; }
     await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
   }
 

@@ -92,6 +92,8 @@ inicial:
 | `0021` | fecha para visitante a view de diagnóstico criada na `0020` |
 | `0022`–`0024` | mostruário se baixa como custo da empresa e nunca pode ser vendido |
 | `0025`–`0028` | recebimento do revendedor por produto e quantidade, não só por valor |
+| `0029`–`0030` | o custo do mostruário vira despesa no envio, uma vez só; devolução estorna |
+| `0031`–`0034` | devolução de produto vendido, crédito por devolução, relatórios do revendedor, edição de itens da compra e data de pagamento da compra |
 
 ### Decisões de modelagem
 
@@ -105,8 +107,10 @@ foram descartadas e o porquê. As três que mais moldam o resto:
   quando chega mercadoria nova mais cara.
 - **Consignação não é venda.** Produto com revendedor continua sendo patrimônio da empresa; a
   receita nasce na prestação de contas, não na remessa.
-- **Mostruário não é consignação.** Amostra de demonstração não se vende: ou volta ao estoque, ou é
-  baixada como despesa da empresa. O banco recusa marcar item de mostruário como vendido.
+- **Mostruário não é consignação.** Amostra de demonstração não se vende. O custo dela vira despesa
+  da empresa **no dia do envio**, uma vez só; se a amostra voltar ao estoque a despesa é estornada na
+  proporção do que voltou, e quando acaba basta marcá-la como finalizada — sem custo novo. O banco
+  recusa marcar item de mostruário como vendido ou perdido.
 
 ### Como o revendedor paga
 
@@ -115,6 +119,66 @@ modos: **por produto e quantidade** (padrão para revendedor) e **por valor tota
 No modo por peça o sistema calcula o valor, grava quais unidades foram pagas em
 `recebimento_itens` e abate as parcelas do documento de origem, da mais antiga para a mais nova.
 Vale nas duas origens em que o revendedor deve: venda direta e prestação de contas.
+
+### Mostruário: o custo é seu, e entra uma vez só
+
+Amostra de mostruário é material de demonstração, não mercadoria à venda. Por isso ela sai do
+patrimônio no instante em que sai da sua mão:
+
+| Momento | O que o sistema faz |
+|---|---|
+| envio da remessa | lança o custo como despesa (categoria "Custo de mostruário") |
+| revendedor devolve | devolve ao estoque e **estorna** a despesa, na medida do que voltou |
+| a amostra acaba | marca como **finalizada** — sai do estoque, **sem despesa nova** |
+| tentar vender | recusado |
+| tentar lançar como perda | recusado — em amostra, perda e finalização são a mesma coisa |
+
+Finalizar e devolver estão na própria tela da remessa, sem precisar abrir prestação de contas —
+mostruário nunca gera cobrança, então não há acerto a fazer. Também continuam disponíveis dentro da
+prestação de contas, para quem prefere resolver tudo num documento só.
+
+No dashboard, o mostruário deixou de contar em "Investimento total": esse dinheiro já foi para a
+despesa, e somá-lo de novo como estoque contaria o mesmo valor duas vezes.
+
+### Devolução de produto vendido
+
+Item de venda pode ser devolvido peça a peça, pela própria ficha da venda. O produto volta ao
+estoque disponível pelo custo congelado na venda — CMV de venda antiga não muda —, e o valor sai do
+que o comprador ainda deve, começando pela parcela mais antiga.
+
+Se ele já tinha pago, o que sobra vira **crédito** a favor dele: aparece na ficha, aparece em contas
+a receber e abate qualquer parcela em aberto. Crédito não é entrada de caixa e não conta como
+recebimento. Vale para revendedor e para consumidor final.
+
+Receita, CMV e lucro passam a ser líquidos de devolução; o documento da venda continua mostrando o
+que saiu, com um bloco separado listando o que voltou.
+
+### Os três relatórios do revendedor
+
+Uma view só, `vw_itens_revendedor`, com **uma linha por situação**: um item de 10 unidades com 3
+pagas, 2 devolvidas e 5 em aberto vira três linhas. Os três relatórios são a mesma consulta com um
+filtro diferente:
+
+- **Produtos do revendedor** — tudo que já passou pela mão dele: venda direta, consignação e
+  mostruário, com a situação de cada peça e preço unitário e total.
+- **Produtos pagos** — só o que ele já quitou.
+- **Produtos a pagar** — só o que ainda deve.
+
+Funciona nos dois modos de pagamento: quando ele paga por peça, a unidade fica amarrada em
+`recebimento_itens`; quando paga por valor total, o dinheiro é distribuído pelos itens em aberto do
+mesmo documento, na ordem. Nos dois casos os totais fecham com o que entrou.
+
+### Compras
+
+Produtos podem ser **incluídos e excluídos**, inclusive numa compra já confirmada: o banco desfaz a
+entrada de estoque, refaz o rateio de frete e taxa e dá entrada de novo — então o custo unitário de
+todos os produtos da nota é recalculado. Se alguma unidade daquela compra já saiu do estoque, a
+alteração é recusada.
+
+A compra também registra **quando será paga**, e aparece em Despesas › Compras a pagar. Ela **não é
+despesa**: a mercadoria vira estoque e o custo entra no resultado como CMV quando o produto é
+vendido — frete e taxa de cartão já vão embutidos nesse custo. A lista serve para acompanhar o
+caixa, não para somar no lucro.
 
 ### O que o revendedor vê
 

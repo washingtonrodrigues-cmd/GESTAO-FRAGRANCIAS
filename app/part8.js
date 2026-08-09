@@ -179,7 +179,9 @@ async function imprimirPrestacao(id) {
         rem:ri.remessas?.numero, data:ri.remessas?.data_envio, qtd:N(ri.quantidade),
         cu:N(ri.valor_custo_unitario), vr:N(ri.valor_revenda_unitario) }; });
     const rec = Object.values(recebidos);
-    const qtdBaixada = g('BAIXADO').reduce((a, e) => a + N(e.quantidade), 0);
+    /* 'BAIXADO' é o nome antigo do mesmo evento, anterior à migração 0030. */
+    const finalizados = [...g('FINALIZADO'), ...g('BAIXADO')];
+    const qtdBaixada = finalizados.reduce((a, e) => a + N(e.quantidade), 0);
 
     let _sn = 0;
     const sec = (t) => `<h4>${++_sn} · ${esc(t)}</h4>`;
@@ -220,7 +222,7 @@ async function imprimirPrestacao(id) {
       ${bloco('Produtos vendidos', g('VENDIDO'), true)}
       ${bloco('Produtos devolvidos', g('DEVOLVIDO'), false)}
       ${bloco('Produtos perdidos ou danificados', g('PERDIDO'), false)}
-      ${bloco('Amostras de mostruário baixadas — sem cobrança', g('BAIXADO'), false)}
+      ${bloco('Amostras de mostruário finalizadas — sem cobrança', finalizados, false)}
 
       ${emPosse.length ? `${sec('Produtos que continuam em posse')}
       <table><thead><tr><th>Produto</th><th class="c" style="width:18mm">Qtd</th>
@@ -234,7 +236,7 @@ async function imprimirPrestacao(id) {
       <div class="grid2" style="margin-bottom:3mm">
         <div class="caixa"><div class="k">Vendidos</div><div class="v">${QTD(pc.qtd_vendida)} un</div></div>
         <div class="caixa"><div class="k">Devolvidos</div><div class="v">${QTD(pc.qtd_devolvida)} un</div></div>
-        ${qtdBaixada ? `<div class="caixa"><div class="k">Baixados</div><div class="v">${QTD(qtdBaixada)} un</div></div>` : ''}
+        ${qtdBaixada ? `<div class="caixa"><div class="k">Finalizados</div><div class="v">${QTD(qtdBaixada)} un</div></div>` : ''}
         <div class="caixa"><div class="k">Perdidos</div><div class="v">${QTD(pc.qtd_perdida)} un</div></div>
         <div class="caixa"><div class="k">Em posse</div><div class="v">${QTD(emPosse.reduce((a, x) => a + N(x.qtd_em_posse), 0))} un</div></div>
       </div>
@@ -244,7 +246,7 @@ async function imprimirPrestacao(id) {
         <div class="l big"><span>TOTAL DESTE ACERTO</span><span>${BRLn(pc.valor_devido)}</span></div>
       </div>
       ${(!pc.cobrar_perdas && N(pc.valor_perdas)) || qtdBaixada ? `<div class="aviso" style="background:#f6f8f4;border-left-color:#7a9a5b;color:#3f5230">
-        ${qtdBaixada ? `<b>${QTD(qtdBaixada)} amostra(s) de mostruário baixada(s)</b> — sem cobrança: o custo fica com a empresa.` : ''}
+        ${qtdBaixada ? `<b>${QTD(qtdBaixada)} amostra(s) de mostruário finalizada(s)</b> — sem cobrança: o custo fica com a empresa.` : ''}
         ${!pc.cobrar_perdas && N(pc.valor_perdas) ? `${qtdBaixada ? '<br>' : ''}<b>Perdas não cobradas</b> — absorvidas pela empresa.` : ''}
       </div>` : ''}
 
@@ -375,6 +377,55 @@ function docPosse(r, posse) {
 }
 
 /* ── Extrato do revendedor ── */
+/* Relatório geral do revendedor: tudo o que ele já pegou, com a situação de
+   cada peça. Documento de via dele — por isso mostra só preço de revenda,
+   nunca custo de aquisição. */
+function docItensRevendedor(r, itens) {
+  const soma = (sit) => itens.filter(x => x.situacao === sit);
+  const vl = (l) => l.reduce((a, x) => a + N(x.valor_total), 0);
+  const qt = (l) => l.reduce((a, x) => a + N(x.quantidade), 0);
+  const pago = soma('PAGO'), aPagar = soma('A_PAGAR'), devolvido = soma('DEVOLVIDO');
+  const emPosse = soma('EM_POSSE'), amostra = [...soma('AMOSTRA'), ...soma('AMOSTRA_FINALIZADA')];
+  const perdido = soma('PERDIDO');
+
+  const bloco = (titulo, lista, mostrarValor) => lista.length ? `
+    <h4>${esc(titulo)}</h4>
+    <table><thead><tr><th style="width:26mm">Origem</th><th style="width:20mm">Data</th>
+      <th>Produto</th><th class="c" style="width:14mm">Qtd</th>
+      ${mostrarValor ? '<th class="r" style="width:24mm">Preço un.</th><th class="r" style="width:26mm">Total</th>' : ''}
+      </tr></thead><tbody>
+      ${lista.map(x => `<tr>
+        <td>${esc(x.documento)}</td><td>${dBR(x.data)}</td>
+        <td class="prod"><b>${esc(x.produto_nome)}</b><span>${esc(x.produto_codigo)}</span></td>
+        <td class="c">${QTD(x.quantidade)}</td>
+        ${mostrarValor ? `<td class="r">${BRLn(x.valor_unitario)}</td><td class="r">${BRLn(x.valor_total)}</td>` : ''}
+        </tr>`).join('')}
+      <tr class="sub"><td colspan="3">Subtotal</td><td class="c">${QTD(qt(lista))} un</td>
+        ${mostrarValor ? `<td></td><td class="r">${BRLn(vl(lista))}</td>` : ''}</tr>
+    </tbody></table>` : '';
+
+  return `<div class="doc">
+    ${cabecalho('Relatório de produtos do revendedor', null, dBR(hoje()))}
+    <h4>Revendedor</h4>
+    ${blocoPessoa(r, 'Revendedor')}
+    ${bloco('Produtos pagos', pago, true)}
+    ${bloco('Produtos a pagar', aPagar, true)}
+    ${bloco('Produtos devolvidos', devolvido, true)}
+    ${bloco('Produtos ainda em posse — consignação', emPosse, true)}
+    ${bloco('Amostras de mostruário — sem cobrança', amostra, false)}
+    ${bloco('Produtos perdidos', perdido, true)}
+    <div class="tot">
+      <div class="l"><span>Já pago</span><span>${BRLn(vl(pago))}</span></div>
+      ${devolvido.length ? `<div class="l"><span>Devolvido</span><span>${BRLn(vl(devolvido))}</span></div>` : ''}
+      ${emPosse.length ? `<div class="l"><span>Em posse (ainda não vendido)</span><span>${BRLn(vl(emPosse))}</span></div>` : ''}
+      <div class="l big"><span>TOTAL A PAGAR</span><span>${BRLn(vl(aPagar))}</span></div>
+    </div>
+    ${amostra.length ? `<div class="aviso" style="background:#f6f8f4;border-left-color:#7a9a5b;color:#3f5230">
+      As ${QTD(qt(amostra))} amostra(s) de mostruário <b>não são cobradas</b>: o custo delas é da empresa.</div>` : ''}
+    ${assinaturas(S.params.empresa_nome || 'ESSENZA AURA', r.nome)}
+    ${rodape()}</div>`;
+}
+
 function docExtrato(r, mov, saldo) {
   return `<div class="doc">
     ${cabecalho('Extrato do revendedor', null, dBR(hoje()))}

@@ -78,7 +78,8 @@ ROTAS.dashboard = async (v) => {
     <div class="kpi"><div class="lab">Custo dos produtos</div><div class="val">${BRL(d.total_custo_produtos)}</div></div>
     <div class="kpi"><div class="lab">Frete</div><div class="val">${BRL(d.total_frete)}</div></div>
     <div class="kpi"><div class="lab">Taxa de cartão</div><div class="val">${BRL(d.total_taxa_cartao)}</div></div>
-    <div class="kpi violet"><div class="lab">Em mostruário</div><div class="val">${BRL(d.valor_mostruario)}</div></div>
+    <div class="kpi violet"><div class="lab">Custo de mostruário</div><div class="val">${BRL(d.total_custo_mostruario)}</div>
+      <div class="sub">já lançado como despesa</div></div>
   </div>
 
   <div class="sec-t">Estoque · posição atual</div>
@@ -86,7 +87,8 @@ ROTAS.dashboard = async (v) => {
     <div class="kpi blue"><div class="lab">Estoque disponível</div><div class="val">${BRL(d.valor_estoque_disponivel)}</div>
       <div class="sub">${QTD(d.qtd_estoque_disponivel)} un · ${d.produtos_disponiveis} produtos</div></div>
     <div class="kpi violet"><div class="lab">Com revendedores</div><div class="val">${BRL(d.valor_com_revendedores)}</div></div>
-    <div class="kpi blue"><div class="lab">Investimento total</div><div class="val">${BRL(d.investimento_total_mercadoria)}</div></div>
+    <div class="kpi blue"><div class="lab">Investimento total</div><div class="val">${BRL(d.investimento_total_mercadoria)}</div>
+      <div class="sub">sem mostruário: virou despesa</div></div>
     <div class="kpi"><div class="lab">Potencial de venda</div><div class="val">${BRL(d.potencial_venda_estoque)}</div></div>
     <div class="kpi green"><div class="lab">Lucro potencial</div>
       <div class="val">${BRL(N(d.potencial_venda_estoque) - N(d.investimento_total_mercadoria))}</div></div>
@@ -384,6 +386,7 @@ async function fichaProduto(v, id) {
   crumb(`Produtos › ${p.nome}`);
   const TIPOS = { ENTRADA_COMPRA:'Entrada por compra', SAIDA_VENDA:'Venda', SAIDA_REMESSA:'Envio a revendedor',
     RETORNO_DEVOLUCAO:'Devolução', BAIXA_VENDA_CONSIGNADA:'Venda em consignação', BAIXA_PERDA:'Perda',
+    BAIXA_MOSTRUARIO:'Mostruário finalizado',  /* saída da amostra; o custo já foi despesa no envio */
     RESERVA:'Reserva', LIBERACAO_RESERVA:'Liberação de reserva', AJUSTE_POSITIVO:'Ajuste (entrada)',
     AJUSTE_NEGATIVO:'Ajuste (saída)', ESTORNO:'Estorno' };
 

@@ -388,15 +388,23 @@ async function formVenda(v) {
 }
 
 async function fichaVenda(v, id) {
-  const [vd, tits] = await Promise.all([
+  const [vd, tits, devs] = await Promise.all([
     q(sb.from('vendas').select('*,clientes(*),revendedores(*),formas_pagamento(nome),venda_itens(*,produtos(codigo,nome,tamanho))').eq('id', id).single()),
-    q(sb.from('vw_titulos_receber').select('*').eq('venda_id', id).order('numero_parcela'))
+    q(sb.from('vw_titulos_receber').select('*').eq('venda_id', id).order('numero_parcela')),
+    q(sb.from('venda_devolucoes').select('*,produtos(codigo,nome)').eq('venda_id', id).order('data_devolucao'))
   ]);
   crumb(`Vendas › nº ${vd.numero}`);
   const comp = vd.clientes || vd.revendedores;
   const badge = { RASCUNHO:['a','Rascunho'], CONFIRMADO:['g','Confirmada'], CANCELADO:['r','Cancelada'] }[vd.status];
   const recebido = tits.reduce((a, t) => a + N(t.valor_recebido), 0);
   const aberto = tits.filter(t => t.situacao === 'ABERTO').reduce((a, t) => a + N(t.saldo), 0);
+  /* Devolução não apaga a venda: o documento continua mostrando o que saiu.
+     O que muda é o resultado, que passa a ser líquido do que voltou. */
+  const devolvido = N(vd.valor_devolvido);
+  const receita = N(vd.valor_total) - devolvido;
+  const cmv = N(vd.custo_total) - N(vd.custo_devolvido);
+  const lucro = receita - cmv;
+  const podeDevolver = vd.status === 'CONFIRMADO';
 
   v.innerHTML = `
   <div class="page-head"><h1>Venda nº ${vd.numero} <span class="tag ${badge[0]}">${badge[1]}</span>
@@ -404,27 +412,49 @@ async function fichaVenda(v, id) {
       ${esc(vd.formas_pagamento?.nome)}${vd.qtd_parcelas > 1 ? ` em ${vd.qtd_parcelas}×` : ' à vista'}</small></h1>
     <div class="acts"><a class="btn btn-s btn-sm" href="#vendas">← Voltar</a>
       <button class="btn btn-s btn-sm" id="recBtn">🧾 Recibo</button>
+      ${podeDevolver && vd.venda_itens.some(i => N(i.quantidade) - N(i.qtd_devolvida) > 0)
+        ? '<button class="btn btn-s btn-sm" id="devBtn">↩ Devolver produto</button>' : ''}
       ${comp?.whatsapp ? `<a class="btn btn-g btn-sm" target="_blank" href="https://wa.me/55${comp.whatsapp}">WhatsApp</a>` : ''}
       ${vd.status === 'CONFIRMADO' ? '<button class="btn btn-d btn-sm" id="canBtn">Cancelar venda</button>' : ''}</div></div>
   ${vd.status === 'CANCELADO' ? `<div class="alert bad"><span>⛔</span><div><b>Venda cancelada</b> em ${dBR(vd.data_cancelamento)}.<br>Motivo: ${esc(vd.motivo_cancelamento || '')}</div></div>` : ''}
   <div class="kpis k5">
     <div class="kpi"><div class="lab">Subtotal</div><div class="val">${BRL(vd.subtotal)}</div></div>
     <div class="kpi"><div class="lab">Desconto</div><div class="val">${BRL(vd.desconto_valor)}</div></div>
-    <div class="kpi green"><div class="lab">Total</div><div class="val">${BRL(vd.valor_total)}</div></div>
-    <div class="kpi"><div class="lab">Custo (CMV)</div><div class="val">${BRL(vd.custo_total)}</div></div>
-    <div class="kpi green"><div class="lab">Lucro bruto</div><div class="val">${BRL(vd.lucro_bruto)}</div>
-      <div class="sub">margem ${PCT(N(vd.valor_total) ? N(vd.lucro_bruto) / N(vd.valor_total) * 100 : 0)}</div></div>
+    <div class="kpi green"><div class="lab">Total${devolvido ? ' líquido' : ''}</div><div class="val">${BRL(receita)}</div>
+      ${devolvido ? `<div class="sub">${BRL(vd.valor_total)} − ${BRL(devolvido)} devolvidos</div>` : ''}</div>
+    <div class="kpi"><div class="lab">Custo (CMV)</div><div class="val">${BRL(cmv)}</div></div>
+    <div class="kpi green"><div class="lab">Lucro bruto</div><div class="val">${BRL(lucro)}</div>
+      <div class="sub">margem ${PCT(receita ? lucro / receita * 100 : 0)}</div></div>
   </div>
   <div class="card"><div class="card-h"><h3>Itens</h3></div><div class="tw"><table class="dt"><thead><tr>
-    <th>Produto</th><th class="r">Qtd</th><th class="r">Preço unit.</th><th class="r">Subtotal</th>
-    <th class="r">Custo unit.</th><th class="r">Lucro</th></tr></thead><tbody>
-    ${vd.venda_itens.map(i => `<tr>
+    <th>Produto</th><th class="r">Qtd</th><th class="r">Devolvidas</th><th class="r">Preço unit.</th>
+    <th class="r">Subtotal</th><th class="r">Custo unit.</th><th class="r">Lucro</th>
+    ${podeDevolver ? '<th class="r" style="width:120px"></th>' : ''}</tr></thead><tbody>
+    ${vd.venda_itens.map(i => { const dv = N(i.qtd_devolvida), rest = N(i.quantidade) - dv; return `<tr>
       <td><a href="#produtos/${i.produto_id}"><b>${esc(i.produtos?.nome)}</b></a>
         <span style="display:block;font-size:11.5px;color:var(--mute)" class="num">${esc(i.produtos?.codigo)}</span></td>
-      <td class="r">${QTD(i.quantidade)}</td><td class="r money">${BRL(i.preco_unitario)}</td>
+      <td class="r">${QTD(i.quantidade)}</td>
+      <td class="r ${dv ? 'neg' : ''}">${dv ? QTD(dv) : '—'}</td>
+      <td class="r money">${BRL(i.preco_unitario)}</td>
       <td class="r money">${BRL(i.subtotal)}</td><td class="r money">${BRL(i.custo_unitario_praticado)}</td>
-      <td class="r money ${N(i.lucro_item) >= 0 ? 'pos' : 'neg'}">${BRL(i.lucro_item)}</td></tr>`).join('')}
+      <td class="r money ${N(i.lucro_item) >= 0 ? 'pos' : 'neg'}">${BRL(i.lucro_item)}</td>
+      ${podeDevolver ? `<td class="r">${rest > 0
+        ? `<button class="btn btn-s btn-sm" data-dv="${i.id}">↩ Devolver</button>`
+        : '<span style="color:var(--mute);font-size:11.5px">tudo devolvido</span>'}</td>` : ''}</tr>`; }).join('')}
   </tbody></table></div></div>
+  ${devs.length ? `<div class="card"><div class="card-h"><h3>Devoluções</h3>
+    <span class="tag a">${BRL(devolvido)} devolvidos</span></div><div class="tw"><table class="dt"><thead><tr>
+    <th>Data</th><th>Produto</th><th class="r">Qtd</th><th class="r">Valor unit.</th><th class="r">Total</th>
+    <th class="r">Abatido da dívida</th><th class="r">Virou crédito</th><th>Motivo</th></tr></thead><tbody>
+    ${devs.map(d => `<tr>
+      <td class="nw">${dBR(d.data_devolucao)}</td>
+      <td><b>${esc(d.produtos?.nome)}</b></td>
+      <td class="r">${QTD(d.quantidade)}</td><td class="r money">${BRL(d.valor_unitario)}</td>
+      <td class="r money"><b>${BRL(d.valor_total)}</b></td>
+      <td class="r money pos">${BRL(d.valor_abatido)}</td>
+      <td class="r money">${N(d.valor_credito) ? BRL(d.valor_credito) : '—'}</td>
+      <td>${esc(d.motivo || '—')}</td></tr>`).join('')}
+  </tbody></table></div></div>` : ''}
   <div class="card"><div class="card-h"><h3>Parcelas</h3>
     <span class="tag ${aberto <= 0 ? 'g' : 'a'}">${aberto <= 0 ? 'Quitada' : BRL(aberto) + ' em aberto'}</span></div>
     <div class="tw"><table class="dt"><thead><tr>
@@ -440,13 +470,37 @@ async function fichaVenda(v, id) {
            <button class="btn btn-s btn-sm" data-vc="${t.id}" title="Alterar vencimento">📅</button>` : ''}</td></tr>`).join('')
       : `<tr><td colspan="7">${vazio('💰','Sem parcelas','Esta venda não gerou títulos.')}</td></tr>`}
   </tbody><tfoot><tr style="background:#fbfcfe;font-weight:700">
-    <td colspan="2">Total</td><td class="r money">${BRL(vd.valor_total)}</td>
+    <td colspan="2">Total</td><td class="r money">${BRL(receita)}</td>
     <td class="r money pos">${BRL(recebido)}</td><td class="r money">${BRL(aberto)}</td><td colspan="2"></td></tr></tfoot>
   </table></div></div>
   ${vd.observacoes ? `<div class="card"><div class="card-b"><b style="font-size:12px;color:var(--mute)">OBSERVAÇÕES</b>
     <p style="margin-top:6px">${esc(vd.observacoes)}</p></div></div>` : ''}`;
 
   $('#recBtn').onclick = () => reciboVenda(id);
+  $$('[data-dv]').forEach(b => b.onclick = () => {
+    const it = vd.venda_itens.find(x => x.id === b.dataset.dv);
+    formDevolucaoVenda(vd, it, aberto);
+  });
+  /* Em tela estreita a tabela de itens rola na horizontal e o botão da linha
+     fica fora de vista. Este atalho no topo resolve: com um produto só vai
+     direto, com vários pergunta qual. */
+  const db = $('#devBtn');
+  if (db) db.onclick = () => {
+    const disp = vd.venda_itens.filter(i => N(i.quantidade) - N(i.qtd_devolvida) > 0);
+    if (disp.length === 1) return formDevolucaoVenda(vd, disp[0], aberto);
+    const m = modal({ titulo:'Qual produto o cliente devolveu?',
+      corpo:`<div style="display:grid;gap:8px">${disp.map(i => `
+        <button class="btn btn-s esc" data-i="${i.id}"
+          style="justify-content:flex-start;text-align:left;padding:11px 13px;height:auto">
+          <span style="display:block"><b style="font-size:13.5px">${esc(i.produtos?.nome)}</b>
+          <span style="display:block;font-size:11.5px;color:var(--mute);font-weight:400">
+            ${QTD(N(i.quantidade) - N(i.qtd_devolvida))} un disponível(is) ·
+            ${BRL(N(i.subtotal) / N(i.quantidade))} cada</span></span></button>`).join('')}</div>`,
+      rodape:'<button class="btn btn-s" data-x>Cancelar</button>' });
+    $('[data-x]', m.foot).onclick = m.fechar;
+    $$('.esc', m.body).forEach(b => b.onclick = () => {
+      m.fechar(); formDevolucaoVenda(vd, disp.find(i => i.id === b.dataset.i), aberto); });
+  };
   $$('[data-rc]').forEach(b => b.onclick = async () => {
     const t = tits.find(x => x.id === b.dataset.rc);
     formRecebimento(vd.tipo === 'CONSUMIDOR' ? 'CLIENTE' : 'REVENDEDOR', comp, [t]);
@@ -469,10 +523,127 @@ async function fichaVenda(v, id) {
   };
 }
 
+/* Devolução de produto vendido, item a item.
+   O produto volta ao estoque de venda e o valor sai do que o comprador deve.
+   Se ele já tinha pago, o valor vira crédito a favor dele. */
+function formDevolucaoVenda(vd, item, abertoTotal) {
+  const max = N(item.quantidade) - N(item.qtd_devolvida);
+  /* Preço efetivamente cobrado: subtotal do item já é líquido do desconto do
+     item; o desconto do cabeçalho entra pelo mesmo fator, como no banco. */
+  const fator = N(vd.subtotal) > 0 ? N(vd.valor_total) / N(vd.subtotal) : 1;
+  const vu = Math.round((N(item.subtotal) / N(item.quantidade)) * fator * 100) / 100;
+
+  const m = modal({ titulo:`Devolver · ${item.produtos?.nome || ''}`,
+    corpo:`<div class="alert info"><span>ℹ</span><div>O produto volta para o
+      <b>estoque disponível</b> e o valor sai do que ${esc(vd.clientes?.nome || vd.revendedores?.nome || 'o comprador')}
+      tem a pagar, começando pela parcela mais antiga. O que passar do que ele ainda deve
+      vira <b>crédito</b> a favor dele, para abater numa próxima compra.</div></div>
+      <div class="grid-f f2">
+        <div><label>Quantidade a devolver</label>
+          <input class="inp num" type="number" id="dv_q" min="0.001" step="1" max="${max}" value="${max}">
+          <div class="hint">Restam ${QTD(max)} un desta venda · ${BRL(vu)} cada</div></div>
+        <div><label>Data da devolução</label>
+          <input class="inp" type="date" id="dv_d" value="${hoje()}" min="${vd.data_venda}" max="${hoje()}"></div>
+      </div>
+      <div style="margin-top:12px"><label>Motivo (opcional)</label>
+        <input class="inp" id="dv_m" placeholder="Ex.: não gostou da fragrância, frasco com defeito"></div>
+      <div id="dv_resumo" style="margin-top:16px"></div>`,
+    rodape:`<button class="btn btn-s" data-x>Cancelar</button>
+            <button class="btn btn-p" data-ok>Confirmar devolução</button>` });
+
+  const resumo = () => {
+    const q2 = N($('#dv_q', m.body).value);
+    const val = Math.round(q2 * vu * 100) / 100;
+    const abate = Math.min(val, N(abertoTotal));
+    const cred = Math.round((val - abate) * 100) / 100;
+    $('#dv_resumo', m.body).innerHTML = `<div class="sumbox">
+      <div class="sumrow"><span class="l">Valor da devolução</span><span class="money">${BRL(val)}</span></div>
+      <div class="sumrow"><span class="l">Abate do que ele deve</span><span class="money pos">${BRL(abate)}</span></div>
+      ${cred > 0 ? `<div class="sumrow"><span class="l">Vira crédito a favor dele</span><span class="money">${BRL(cred)}</span></div>` : ''}
+      <div class="sumrow tot"><span class="l">Fica devendo depois</span>
+        <span class="money">${BRL(Math.max(0, N(abertoTotal) - abate))}</span></div>
+    </div>
+    ${cred > 0 ? `<div class="alert info" style="margin-top:12px"><span>ℹ</span><div>
+      ${BRL(cred)} viram crédito porque essa parte já estava paga. O crédito aparece na ficha
+      dele e pode abater qualquer parcela em aberto.</div></div>` : ''}`;
+    $('[data-ok]', m.foot).disabled = !(q2 > 0 && q2 <= max);
+  };
+
+  $('[data-x]', m.foot).onclick = m.fechar;
+  $('#dv_q', m.body).oninput = resumo;
+  $('[data-ok]', m.foot).onclick = async (ev) => {
+    const b = ev.target, qtd = N($('#dv_q', m.body).value);
+    if (qtd <= 0 || qtd > max)
+      return bad('Quantidade inválida', `Informe de 1 até ${QTD(max)} unidade(s).`);
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Devolvendo…';
+    try {
+      await rpc('fn_devolver_item_venda', { p_venda_item_id:item.id, p_quantidade:qtd,
+        p_data:$('#dv_d', m.body).value || null, p_motivo:$('#dv_m', m.body).value.trim() || null });
+      m.fechar(); ok('Devolução registrada', 'Produto de volta ao estoque e dívida atualizada.');
+      navegar();
+    } catch (e) { bad('Não foi possível devolver', erroAmigavel(e));
+      b.disabled = false; b.textContent = 'Confirmar devolução'; }
+  };
+  resumo();
+}
+
+/* Usar crédito para abater uma parcela em aberto. */
+async function formUsarCredito(titulo, aoSalvar) {
+  const creds = await q(sb.from('vw_creditos').select('*').gt('saldo', 0)
+    .eq(titulo.tipo_devedor === 'CLIENTE' ? 'cliente_id' : 'revendedor_id',
+        titulo.tipo_devedor === 'CLIENTE' ? titulo.cliente_id : titulo.revendedor_id)
+    .order('data_credito'));
+  if (!creds.length) return warn('Sem crédito', 'Esta pessoa não tem crédito disponível.');
+  const total = creds.reduce((a, c) => a + N(c.saldo), 0);
+  const usar = Math.min(total, N(titulo.saldo));
+
+  const m = modal({ titulo:'Usar crédito na parcela',
+    corpo:`<div class="alert info"><span>ℹ</span><div>O crédito nasce de devolução de produto
+      já pago. Usar aqui <b>reduz a parcela</b> — não é entrada de dinheiro no caixa.</div></div>
+      <div class="sumbox" style="margin-bottom:14px">
+        <div class="sumrow"><span class="l">Parcela ${titulo.numero_parcela}/${titulo.total_parcelas}</span>
+          <span class="money">${BRL(titulo.saldo)} em aberto</span></div>
+        <div class="sumrow"><span class="l">Crédito disponível</span><span class="money pos">${BRL(total)}</span></div>
+      </div>
+      <div class="grid-f f2">
+        <div><label>Valor a usar</label>
+          <input class="inp num" type="number" id="cr_v" min="0.01" step="0.01" max="${usar}" value="${usar.toFixed(2)}"></div>
+        <div><label>Data</label><input class="inp" type="date" id="cr_d" value="${hoje()}" max="${hoje()}"></div>
+      </div>`,
+    rodape:`<button class="btn btn-s" data-x>Cancelar</button>
+            <button class="btn btn-p" data-ok>Usar crédito</button>` });
+  $('[data-x]', m.foot).onclick = m.fechar;
+  $('[data-ok]', m.foot).onclick = async (ev) => {
+    const b = ev.target; let falta = N($('#cr_v', m.body).value);
+    if (falta <= 0 || falta > usar + 0.001)
+      return bad('Valor inválido', `Informe até ${BRL(usar)}.`);
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Aplicando…';
+    try {
+      /* Consome os créditos mais antigos primeiro. */
+      for (const c of creds) {
+        if (falta <= 0) break;
+        const v2 = Math.min(N(c.saldo), falta);
+        await rpc('fn_usar_credito', { p_credito_id:c.id, p_titulo_id:titulo.id,
+          p_valor:v2, p_data:$('#cr_d', m.body).value || null });
+        falta = Math.round((falta - v2) * 100) / 100;
+      }
+      m.fechar(); ok('Crédito aplicado', 'A parcela foi reduzida.');
+      (aoSalvar || navegar)();
+    } catch (e) { bad('Não foi possível usar o crédito', erroAmigavel(e));
+      b.disabled = false; b.textContent = 'Usar crédito'; }
+  };
+}
+
 /* ═══════════════ CONTAS A RECEBER (Prompt 11) ═══════════════ */
 ROTAS.receber = async (v, filtro) => {
   crumb('Contas a receber');
-  const tits = await q(sb.from('vw_titulos_receber').select('*').neq('situacao','CANCELADO').order('data_vencimento'));
+  const [tits, creds] = await Promise.all([
+    q(sb.from('vw_titulos_receber').select('*').neq('situacao','CANCELADO').order('data_vencimento')),
+    q(sb.from('vw_creditos').select('*').gt('saldo', 0))
+  ]);
+  /* Quem tem crédito de devolução pode abatê-lo de qualquer parcela em aberto. */
+  const temCredito = (x) => creds.some(c => c.tipo_devedor === x.tipo_devedor
+    && (c.cliente_id || c.revendedor_id) === (x.cliente_id || x.revendedor_id));
   const ab = tits.filter(t => t.situacao === 'ABERTO');
   const venc = ab.filter(t => /VENCIDO/.test(t.situacao_real));
   const breve = ab.filter(t => t.situacao_real === 'VENCE_EM_BREVE');
@@ -492,7 +663,8 @@ ROTAS.receber = async (v, filtro) => {
     <div class="kpi amber"><div class="lab">Vence em breve</div><div class="val">${BRL(s(breve))}</div></div>
     <div class="kpi blue"><div class="lab">A vencer</div><div class="val">${BRL(s(fut))}</div></div>
     <div class="kpi ${s(ab) && s(venc) / s(ab) * 100 > 10 ? 'red' : ''}"><div class="lab">Inadimplência</div>
-      <div class="val">${PCT(s(ab) ? s(venc) / s(ab) * 100 : 0)}</div></div>
+      <div class="val">${PCT(s(ab) ? s(venc) / s(ab) * 100 : 0)}</div>
+      ${creds.length ? `<div class="sub">🎟 ${BRL(creds.reduce((a, c) => a + N(c.saldo), 0))} em crédito de devolução</div>` : ''}</div>
   </div>
   <div class="card">
     <div class="tabs" style="margin:0;padding:0 13px">
@@ -536,7 +708,8 @@ ROTAS.receber = async (v, filtro) => {
       <td class="r money"><b>${BRL(x.saldo)}</b></td>
       <td class="c">${tagSituacao(x.situacao_real, x.dias_atraso)}</td>
       <td class="nw">${x.situacao === 'ABERTO' ? `<button class="btn btn-g btn-sm" data-rc="${x.id}" title="Receber">💰</button>
-          <button class="btn btn-s btn-sm" data-vc="${x.id}" title="Alterar vencimento">📅</button>` : ''}
+          <button class="btn btn-s btn-sm" data-vc="${x.id}" title="Alterar vencimento">📅</button>
+          ${temCredito(x) ? `<button class="btn btn-s btn-sm" data-cr="${x.id}" title="Usar crédito de devolução">🎟</button>` : ''}` : ''}
         ${x.devedor_whatsapp && /VENCIDO/.test(x.situacao_real)
           ? `<a class="btn btn-ghost btn-sm" target="_blank" title="Cobrar no WhatsApp"
              href="https://wa.me/55${x.devedor_whatsapp}?text=${encodeURIComponent(msgParcela(x))}">💬</a>` : ''}</td></tr>`).join('')
@@ -548,6 +721,8 @@ ROTAS.receber = async (v, filtro) => {
       formRecebimento(x.tipo_devedor, { id:x.cliente_id || x.revendedor_id, nome:x.devedor_nome }, [x]); });
     $$('[data-vc]').forEach(b => b.onclick = () => {
       formVencimento(tits.find(y => y.id === b.dataset.vc), () => navegar()); });
+    $$('[data-cr]').forEach(b => b.onclick = () => {
+      formUsarCredito(tits.find(y => y.id === b.dataset.cr)); });
     atualizarSel();
   };
   const atualizarSel = () => {
@@ -953,11 +1128,47 @@ ROTAS.recebimentos = async (v) => {
   pintar();
 };
 
+/* Marcar a compra como paga, informando quando o dinheiro saiu. */
+async function formPagarCompra(c) {
+  const formas = S.formas || [];
+  const m = modal({ titulo:`Pagar compra nº ${c.numero}`,
+    corpo:`<div class="sumbox" style="margin-bottom:14px">
+        <div class="sumrow"><span class="l">Fornecedor</span><span>${esc(c.fornecedor_nome)}</span></div>
+        <div class="sumrow"><span class="l">Compra</span><span>${dBR(c.data_compra)}</span></div>
+        <div class="sumrow tot"><span class="l">Valor total</span><span class="money">${BRL(c.custo_total)}</span></div>
+      </div>
+      <div class="grid-f f2">
+        <div><label>Data do pagamento</label>
+          <input class="inp" type="date" id="pc_dt" value="${c.data_pagamento || hoje()}" min="${c.data_compra}"></div>
+        <div><label>Forma de pagamento</label><select class="inp" id="pc_fp">
+          <option value="">—</option>${selectOpts(formas)}</select></div>
+      </div>
+      <div class="hint" style="margin-top:10px">Isso não lança despesa: o custo da mercadoria
+        entra no resultado quando o produto é vendido. Serve para você acompanhar o caixa.</div>`,
+    rodape:`<button class="btn btn-s" data-x>Cancelar</button>
+            <button class="btn btn-p" data-ok>Marcar como paga</button>` });
+  $('[data-x]', m.foot).onclick = m.fechar;
+  $('[data-ok]', m.foot).onclick = async (ev) => {
+    const b = ev.target;
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Salvando…';
+    try {
+      await rpc('fn_marcar_compra_paga', { p_compra_id:c.id, p_data:$('#pc_dt', m.body).value || null,
+        p_forma_pagamento_id:$('#pc_fp', m.body).value || null });
+      m.fechar(); ok('Compra marcada como paga', 'Data registrada.'); navegar();
+    } catch (e) { bad('Não foi possível salvar', erroAmigavel(e));
+      b.disabled = false; b.textContent = 'Marcar como paga'; }
+  };
+}
+
 /* ── Despesas ── */
 ROTAS.despesas = async (v) => {
   crumb('Despesas');
-  const ds = await q(sb.from('despesas').select('*,produtos(nome),formas_pagamento(nome)').is('deleted_at', null).order('data_despesa', { ascending:false }));
-  const CAT = { PERDA_ESTOQUE:'Perda de estoque', BAIXA_MOSTRUARIO:'Baixa de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
+  const [ds, cps] = await Promise.all([
+    q(sb.from('despesas').select('*,produtos(nome),formas_pagamento(nome)').is('deleted_at', null).order('data_despesa', { ascending:false })),
+    q(sb.from('vw_compras_a_pagar').select('*').order('data_pagamento', { nullsFirst:false }))
+  ]);
+  const aPagar = cps.filter(c => !c.pago);
+  const CAT = { PERDA_ESTOQUE:'Perda de estoque', BAIXA_MOSTRUARIO:'Custo de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
     EMBALAGEM:'Embalagem', MARKETING:'Marketing', COMISSAO:'Comissão', OPERACIONAL:'Operacional', OUTRAS:'Outras' };
   const porCat = {}; ds.forEach(d => porCat[d.categoria] = (porCat[d.categoria] || 0) + N(d.valor));
 
@@ -969,9 +1180,13 @@ ROTAS.despesas = async (v) => {
     <div class="kpi red"><div class="lab">Total de despesas</div><div class="val">${BRL(ds.reduce((a, d) => a + N(d.valor), 0))}</div></div>
     <div class="kpi"><div class="lab">Fixas</div><div class="val">${BRL(ds.filter(d => d.natureza === 'FIXA').reduce((a, d) => a + N(d.valor), 0))}</div></div>
     <div class="kpi"><div class="lab">Variáveis</div><div class="val">${BRL(ds.filter(d => d.natureza === 'VARIAVEL').reduce((a, d) => a + N(d.valor), 0))}</div></div>
-    <div class="kpi amber"><div class="lab">Perdas de estoque</div><div class="val">${BRL(porCat.PERDA_ESTOQUE || 0)}</div></div>
+    <div class="kpi amber"><div class="lab">Compras a pagar</div>
+      <div class="val">${BRL(aPagar.reduce((a, c) => a + N(c.custo_total), 0))}</div>
+      <div class="sub">${aPagar.length} compra(s) · fora do resultado</div></div>
   </div>
-  <div class="card"><div class="filters">
+  <div class="tabs"><button class="on" data-t="desp">📉 Despesas (${ds.length})</button>
+    <button data-t="comp">🧾 Compras a pagar (${cps.length})</button></div>
+  <div id="pn_desp"><div class="card"><div class="filters">
       <input class="inp grow" id="fq" placeholder="🔍 Buscar…">
       <select class="inp" id="fcat"><option value="">Todas as categorias</option>
         ${Object.entries(CAT).map(([k, x]) => `<option value="${k}">${x}</option>`).join('')}</select>
@@ -979,7 +1194,60 @@ ROTAS.despesas = async (v) => {
     <div class="tw"><table class="dt"><thead><tr>
       <th>Nº</th><th>Data</th><th>Categoria</th><th>Descrição</th><th class="c">Natureza</th>
       <th class="r">Valor</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
-    <div class="pager"><span id="cnt"></span></div></div>`;
+    <div class="pager"><span id="cnt"></span></div></div></div>
+
+  <div id="pn_comp" style="display:none"><div class="alert info"><span>ℹ</span><div>
+    <b>Compra não é despesa.</b> A mercadoria vira estoque, e o custo dela entra no resultado
+    como CMV no dia em que o produto é vendido — frete e taxa de cartão já vão embutidos nesse
+    custo. Lançar a compra também aqui contaria o mesmo dinheiro duas vezes. Esta lista existe
+    para você <b>saber quando sai o dinheiro</b>, não para somar no lucro.</div></div>
+  <div class="card"><div class="filters">
+      <input class="inp grow" id="cq" placeholder="🔍 Buscar por fornecedor…">
+      <select class="inp" id="csit"><option value="">Pagas e a pagar</option>
+        <option value="ABERTO">Só a pagar</option><option value="PAGO">Só pagas</option>
+        <option value="VENCIDO">Só vencidas</option></select>
+      <input class="inp" type="date" id="cd1"><input class="inp" type="date" id="cd2"></div>
+    <div class="tw"><table class="dt"><thead><tr>
+      <th>Nº</th><th>Compra</th><th>Fornecedor</th><th>Vencimento</th><th class="c">Situação</th>
+      <th>Forma</th><th class="r">Valor</th><th></th></tr></thead><tbody id="ctb"></tbody></table></div>
+    <div class="pager"><span id="ccnt"></span></div></div></div>`;
+
+  $$('.tabs [data-t]').forEach(b => b.onclick = () => {
+    $$('.tabs [data-t]').forEach(x => x.classList.toggle('on', x === b));
+    $('#pn_desp').style.display = b.dataset.t === 'desp' ? '' : 'none';
+    $('#pn_comp').style.display = b.dataset.t === 'comp' ? '' : 'none';
+  });
+
+  const SIT = { PAGO:['g','Paga'], VENCIDO:['r','Vencida'], VENCE_EM_BREVE:['a','Vence em breve'],
+                A_VENCER:['b','A vencer'], SEM_DATA:['n','Sem data'] };
+  const pintarCompras = () => {
+    const t = $('#cq').value.trim().toLowerCase(), sit = $('#csit').value,
+          d1 = $('#cd1').value, d2 = $('#cd2').value;
+    const f = cps.filter(c => (!t || (c.fornecedor_nome || '').toLowerCase().includes(t))
+      && (!sit || (sit === 'ABERTO' ? !c.pago : c.situacao === sit))
+      && (!d1 || (c.data_pagamento || c.data_compra) >= d1)
+      && (!d2 || (c.data_pagamento || c.data_compra) <= d2));
+    $('#ccnt').textContent = `${f.length} compra(s) · ${BRL(f.reduce((a, c) => a + N(c.custo_total), 0))}`;
+    $('#ctb').innerHTML = f.length ? f.map(c => {
+      const sg = SIT[c.situacao] || SIT.SEM_DATA;
+      return `<tr>
+      <td class="num"><a href="#compras/${c.id}"><b>${c.numero}</b></a></td>
+      <td class="nw">${dBR(c.data_compra)}</td>
+      <td>${esc(c.fornecedor_nome)}</td>
+      <td class="nw">${c.data_pagamento ? dBR(c.data_pagamento) : '—'}
+        ${!c.pago && c.dias_para_pagar != null ? `<span style="display:block;font-size:11px;color:var(--mute)">${
+          c.dias_para_pagar < 0 ? Math.abs(c.dias_para_pagar) + ' dias em atraso'
+          : c.dias_para_pagar === 0 ? 'vence hoje' : 'em ' + c.dias_para_pagar + ' dias'}</span>` : ''}</td>
+      <td class="c"><span class="tag ${sg[0]}">${sg[1]}</span></td>
+      <td>${esc(c.forma_pagamento || '—')}</td>
+      <td class="r money"><b>${BRL(c.custo_total)}</b></td>
+      <td>${!c.pago ? `<button class="btn btn-g btn-sm" data-pg="${c.id}">✓ Marcar paga</button>` : ''}</td></tr>`;
+    }).join('') : `<tr><td colspan="8">${vazio('🧾','Nenhuma compra','Compras confirmadas aparecem aqui com a data de pagamento.')}</td></tr>`;
+    $$('[data-pg]').forEach(b => b.onclick = () => formPagarCompra(cps.find(x => x.id === b.dataset.pg)));
+  };
+  ['#cq','#csit','#cd1','#cd2'].forEach(x => $(x).addEventListener('input', pintarCompras));
+  pintarCompras();
+
   const pintar = () => {
     const t = $('#fq').value.trim().toLowerCase(), c = $('#fcat').value, d1 = $('#fd1').value, d2 = $('#fd2').value;
     const f = ds.filter(d => (!t || d.descricao.toLowerCase().includes(t)) && (!c || d.categoria === c) &&

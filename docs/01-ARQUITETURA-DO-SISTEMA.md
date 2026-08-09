@@ -891,6 +891,10 @@ Regras numeradas para referência cruzada nos demais documentos.
 | **RN-M05** | Item PERDIDO gera despesa pelo valor de custo e pode, opcionalmente, gerar cobrança ao revendedor. |
 | **RN-M06** | O sistema calcula `dias_em_posse = hoje − data_envio` e destaca itens acima do limite parametrizado (padrão: 60 dias). |
 | **RN-M07** | Remessa só pode ser encerrada quando nenhum item estiver EM_POSSE. |
+| **RN-M08** | O custo de uma remessa de **mostruário** vira despesa da empresa (`BAIXA_MOSTRUARIO`) **no ato do envio**, uma vez só. Mostruário é material de demonstração, não mercadoria à venda. |
+| **RN-M09** | Devolução de item de mostruário **estorna** a despesa da RN-M08 na proporção do que voltou: o produto reentra no estoque como patrimônio, e manter a despesa contaria o mesmo dinheiro duas vezes. |
+| **RN-M10** | Item de mostruário marcado como FINALIZADO (a amostra acabou) sai do bolso MOSTRUARIO **sem gerar despesa nova** — o custo já foi reconhecido na RN-M08. |
+| **RN-M11** | Item de mostruário não pode ser marcado como VENDIDO nem como PERDIDO. Venda porque amostra não se vende; perda porque duplicaria o custo já lançado — o caminho é FINALIZADO. |
 
 ### 9.6 Financeiro
 

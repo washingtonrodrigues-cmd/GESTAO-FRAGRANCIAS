@@ -64,16 +64,18 @@ ROTAS.revendedores = async (v, id, aba) => {
 };
 
 async function fichaRevendedor(v, id, aba) {
-  const [r, posse, remessas, titulos, prests, recs] = await Promise.all([
+  const [r, posse, remessas, titulos, prests, recs, itens] = await Promise.all([
     q(sb.from('vw_extrato_revendedor').select('*').eq('id', id).single()),
     q(sb.from('vw_itens_em_posse').select('*').eq('revendedor_id', id).order('dias_em_posse', { ascending:false })),
     q(sb.from('remessas').select('*,remessa_itens(*,produtos(nome,codigo))').eq('revendedor_id', id).order('data_envio', { ascending:false })),
     q(sb.from('vw_titulos_receber').select('*').eq('revendedor_id', id).order('data_vencimento')),
     q(sb.from('prestacoes_contas').select('*').eq('revendedor_id', id).order('data_acerto', { ascending:false })),
-    q(sb.from('recebimentos').select('*,formas_pagamento(nome)').eq('revendedor_id', id).order('data_recebimento', { ascending:false }))
+    q(sb.from('recebimentos').select('*,formas_pagamento(nome)').eq('revendedor_id', id).order('data_recebimento', { ascending:false })),
+    q(sb.from('vw_itens_revendedor').select('*').eq('revendedor_id', id).order('data', { ascending:false }))
   ]);
   crumb(`Revendedores › ${r.nome}`);
   const atras = N(r.dias_max_em_posse) > 60;
+  const somaSit = (sit) => itens.filter(x => x.situacao === sit).reduce((a, x) => a + N(x.valor_total), 0);
 
   // Extrato cronológico com saldo corrido
   const mov = [];
@@ -111,11 +113,13 @@ async function fichaRevendedor(v, id, aba) {
       <div class="sub">consignação ${BRL(r.valor_vendido_consignacao)} · direto ${BRL(r.valor_vendido_direto)}</div></div>
     <div class="kpi ${N(r.saldo_aberto) > 0 ? 'amber' : 'green'}"><div class="lab">Situação financeira</div>
       <div class="val">${BRL(r.saldo_aberto)}</div>
-      <div class="sub">devido ${BRL(r.total_devido)} · pago ${BRL(r.total_pago)}</div></div>
+      <div class="sub">devido ${BRL(r.total_devido)} · pago ${BRL(r.total_pago)}${
+        N(r.saldo_credito) ? ' · 🎟 crédito ' + BRL(r.saldo_credito) : ''}</div></div>
   </div>
 
   <div class="tabs">
     <button class="on" data-t="posse">Em posse (${posse.length})</button>
+    <button data-t="tudo">Todos os produtos (${itens.length})</button>
     <button data-t="ext">Extrato financeiro</button>
     <button data-t="rem">Remessas (${remessas.length})</button>
     <button data-t="pc">Prestações (${prests.length})</button>
@@ -139,6 +143,23 @@ async function fichaRevendedor(v, id, aba) {
       <td colspan="3">Total</td><td class="c">${QTD(r.qtd_em_posse)}</td>
       <td class="r money">${BRL(r.valor_custo_em_posse)}</td><td class="r money">${BRL(r.valor_revenda_em_posse)}</td><td></td></tr></tfoot>` : ''}
     </table></div></div>
+
+  <div class="card" data-p="tudo" style="display:none"><div class="card-h"><h3>Todos os produtos que já pegou</h3>
+    <span class="tag g">pago ${BRL(somaSit('PAGO'))}</span>
+    <span class="tag a">a pagar ${BRL(somaSit('A_PAGAR'))}</span>
+    <button class="btn btn-s btn-sm" id="prTudo">🖨 Imprimir</button>
+    <button class="btn btn-s btn-sm" id="exTudo">📊 Excel</button></div>
+    <div class="filters"><select class="inp" id="fsit">
+      <option value="">Todas as situações</option>
+      <option value="PAGO">Pagos</option><option value="A_PAGAR">A pagar</option>
+      <option value="DEVOLVIDO">Devolvidos</option><option value="EM_POSSE">Em posse</option>
+      <option value="AMOSTRA">Mostruário</option><option value="PERDIDO">Perdidos</option>
+      <option value="AMOSTRA_FINALIZADA">Mostruário finalizado</option></select>
+      <input class="inp grow" id="ftq" placeholder="🔍 Buscar produto…"></div>
+    <div class="tw"><table class="dt"><thead><tr>
+      <th>Origem</th><th>Data</th><th>Produto</th><th class="c">Situação</th><th class="c">Qtd</th>
+      <th class="r">Preço unit.</th><th class="r">Total</th></tr></thead><tbody id="tbTudo"></tbody></table></div>
+    <div class="pager"><span id="cntTudo"></span></div></div>
 
   <div class="card" data-p="ext" style="display:none"><div class="card-h"><h3>Extrato financeiro</h3>
     <button class="btn btn-s btn-sm" id="prExt">🖨 Imprimir</button>
@@ -199,6 +220,31 @@ async function fichaRevendedor(v, id, aba) {
       : `<tr><td colspan="8">${vazio('💰','Nada a receber','Este revendedor não tem parcelas em aberto.')}</td></tr>`}
   </tbody></table></div></div>`;
 
+  const TAGSIT = { PAGO:'g', A_PAGAR:'a', DEVOLVIDO:'b', PERDIDO:'r', EM_POSSE:'n', AMOSTRA:'n', AMOSTRA_FINALIZADA:'n' };
+  const pintarTudo = () => {
+    const sit = $('#fsit').value, t = $('#ftq').value.trim().toLowerCase();
+    const f = itens.filter(x => (!sit || x.situacao === sit)
+      && (!t || (x.produto_nome + ' ' + x.produto_codigo).toLowerCase().includes(t)));
+    $('#cntTudo').textContent = `${f.length} linha(s) · ${QTD(f.reduce((a, x) => a + N(x.quantidade), 0))} un · ${BRL(f.reduce((a, x) => a + N(x.valor_total), 0))}`;
+    $('#tbTudo').innerHTML = f.length ? f.map(x => `<tr>
+      <td>${esc(x.documento)}</td><td class="nw">${dBR(x.data)}</td>
+      <td><b>${esc(x.produto_nome)}</b>
+        <span style="display:block;font-size:11px;color:var(--mute)" class="num">${esc(x.produto_codigo)}</span></td>
+      <td class="c"><span class="tag ${TAGSIT[x.situacao] || 'n'}">${esc(x.situacao_label)}</span></td>
+      <td class="c">${QTD(x.quantidade)}</td>
+      <td class="r money">${BRL(x.valor_unitario)}</td>
+      <td class="r money"><b>${BRL(x.valor_total)}</b></td></tr>`).join('')
+      : `<tr><td colspan="7">${vazio('📦','Nada aqui','Este revendedor ainda não pegou produto nenhum.')}</td></tr>`;
+  };
+  ['#fsit','#ftq'].forEach(x => $(x).addEventListener('input', pintarTudo));
+  pintarTudo();
+  $('#prTudo').onclick = () => imprimir(docItensRevendedor(r, itens));
+  $('#exTudo').onclick = () => exportarExcel(`produtos-${r.nome.replace(/\s+/g,'-').toLowerCase()}`, [
+    { t:'Origem', v:x => x.documento }, { t:'Data', v:x => dBR(x.data) },
+    { t:'Código', v:x => x.produto_codigo }, { t:'Produto', v:x => x.produto_nome },
+    { t:'Situação', v:x => x.situacao_label }, { t:'Quantidade', v:x => N(x.quantidade) },
+    { t:'Preço unitário', v:x => N(x.valor_unitario) }, { t:'Total', v:x => N(x.valor_total) }], itens);
+
   $$('[data-vc]').forEach(b => b.onclick = () =>
     formVencimento(titulos.find(t => t.id === b.dataset.vc), () => navegar()));
   $$('.tabs button').forEach(b => b.onclick = () => {
@@ -231,8 +277,9 @@ function prestacaoContas(rev, posse) {
   const m = modal({ titulo:`Prestação de contas · ${rev.nome}`, largura:'wide',
     corpo:`<div class="alert info"><span>ℹ</span><div>Informe, para cada produto, o que aconteceu com cada unidade.
       O que sobrar continua com o revendedor.<br>
-      <b>Mostruário é amostra e não se vende:</b> ou volta para o estoque, ou é
-      <b>baixado como custo da empresa</b> — nunca vira cobrança para o revendedor.</div></div>
+      <b>Mostruário é amostra e não se vende:</b> o custo dele já virou despesa sua no
+      envio da remessa. Ou volta para o estoque — e a despesa é estornada —, ou é marcado
+      como <b>finalizado</b> quando acaba. Nunca vira cobrança para o revendedor.</div></div>
       <div class="grid-f f3" style="margin-bottom:16px">
         <div><label>Data do acerto</label><input class="inp" type="date" id="pc_data" value="${hoje()}" max="${hoje()}"></div>
         <div><label>Condição de pagamento</label><select class="inp" id="pc_parc">
@@ -254,15 +301,17 @@ function prestacaoContas(rev, posse) {
         <th style="width:12%">Vendidas</th>
         <th style="width:12%">Devolvidas</th>
         <th style="width:12%">Perdidas</th>
-        <th style="width:12%">Baixa<br><span style="font-weight:400;font-size:10px">meu custo</span></th>
+        <th style="width:12%">Finalizadas<br><span style="font-weight:400;font-size:10px">acabou</span></th>
         <th class="c">Continua</th>
         <th class="r">A receber</th></tr></thead><tbody></tbody></table></div>
       <div id="pc_resumo" style="margin-top:16px"></div>`,
     rodape:`<button class="btn btn-s" data-x>Cancelar</button>
             <button class="btn btn-p" data-ok>Confirmar acerto</button>` });
 
-  /* Mostruário não tem venda: a coluna "Vendidas" fica travada e o que
-     vale é "Baixa". Consignação é o contrário. */
+  /* Mostruário só admite duas saídas: volta ao estoque (devolvida) ou acabou
+     (finalizada). Venda e perda ficam travadas — venda porque amostra não se
+     vende, perda porque o custo já foi lançado no envio e a perda o lançaria
+     de novo. Consignação é o contrário: tudo menos "finalizada". */
   const render = () => {
     $('#pctb tbody', m.body).innerHTML = linhas.map((l, i) => {
       const rest = N(l.qtd_em_posse) - N(l.vend) - N(l.devo) - N(l.perd) - N(l.baix);
@@ -279,10 +328,12 @@ function prestacaoContas(rev, posse) {
               value="${l.vend || ''}" placeholder="${l.mostruario ? '—' : '0'}"
               ${trava(l.mostruario, 'Mostruário é amostra e não pode ser vendido. Para vender, devolva ao estoque e registre uma venda normal.')}></td>
         <td><input class="inp num qd" type="number" min="0" step="1" max="${l.qtd_em_posse}" value="${l.devo || ''}" placeholder="0"></td>
-        <td><input class="inp num qp" type="number" min="0" step="1" max="${l.qtd_em_posse}" value="${l.perd || ''}" placeholder="0"></td>
+        <td><input class="inp num qp" type="number" min="0" step="1" max="${l.qtd_em_posse}"
+              value="${l.perd || ''}" placeholder="${l.mostruario ? '—' : '0'}"
+              ${trava(l.mostruario, 'Amostra de mostruário não entra como perda: o custo dela já foi lançado no envio. Marque como finalizada.')}></td>
         <td><input class="inp num qb" type="number" min="0" step="1" max="${l.qtd_em_posse}"
               value="${l.baix || ''}" placeholder="${l.mostruario ? '0' : '—'}"
-              ${trava(!l.mostruario, 'A baixa como custo da empresa vale só para mostruário. Em consignação use devolvido ou perdido.')}></td>
+              ${trava(!l.mostruario, 'Finalizar vale só para mostruário. Em consignação use devolvido ou perdido.')}></td>
         <td class="c ${inval ? 'neg' : ''}"><b>${QTD(rest)}</b></td>
         <td class="r money">${BRL(N(l.vend) * N(l.valor_revenda_unitario))}</td></tr>`;
     }).join('');
@@ -321,7 +372,7 @@ function prestacaoContas(rev, posse) {
   const resumo = () => {
     sincVenc();
     let qv = 0, qd = 0, qp = 0, qb = 0, vv = 0, cv = 0, vd = 0, vp = 0, vb = 0,
-        rest = 0, cr = 0, inval = false;
+        vdm = 0, rest = 0, cr = 0, inval = false;
     linhas.forEach(l => {
       const r2 = N(l.qtd_em_posse) - N(l.vend) - N(l.devo) - N(l.perd) - N(l.baix);
       if (r2 < 0) inval = true;
@@ -331,20 +382,26 @@ function prestacaoContas(rev, posse) {
       vd += N(l.devo) * N(l.valor_custo_unitario);
       vp += N(l.perd) * N(l.valor_custo_unitario);
       vb += N(l.baix) * N(l.valor_custo_unitario);
+      /* Devolução de mostruário estorna a despesa lançada no envio. */
+      if (l.mostruario) vdm += N(l.devo) * N(l.valor_custo_unitario);
       cr += Math.max(r2, 0) * N(l.valor_custo_unitario);
     });
     const cobra = $('#pc_cobra', m.body)?.checked ?? true;
     const devido = vv + (cobra ? vp : 0);
     const lucro = vv - cv;
-    const liq = lucro - (cobra ? 0 : vp) - vb;
+    /* A finalização de mostruário não entra no resultado do acerto: o custo
+       da amostra já foi despesa lá atrás, no envio da remessa. */
+    const liq = lucro - (cobra ? 0 : vp);
     $('#pc_resumo', m.body).innerHTML = `
       ${inval ? '<div class="alert bad"><span>⚠</span><div>Alguma linha soma mais do que o revendedor tem em posse. Corrija antes de confirmar.</div></div>' : ''}
       <div class="sumbox">
         <div class="sumrow"><span class="l">Vendidos</span><span>${QTD(qv)} un · revenda <b class="money">${BRL(vv)}</b> · custo ${BRL(cv)}</span></div>
         <div class="sumrow"><span class="l">Devolvidos</span><span>${QTD(qd)} un · volta ao estoque ${BRL(vd)} de custo</span></div>
         <div class="sumrow"><span class="l">Perdidos</span><span>${QTD(qp)} un · custo ${BRL(vp)}</span></div>
-        ${qb > 0 ? `<div class="sumrow"><span class="l">Baixa de mostruário</span>
-          <span>${QTD(qb)} un · <b class="money neg">${BRL(vb)}</b> de custo seu — não cobrado</span></div>` : ''}
+        ${qd > 0 && vdm > 0 ? `<div class="sumrow"><span class="l">↳ amostras de mostruário</span>
+          <span>estorna <b class="money pos">${BRL(vdm)}</b> de despesa já lançada</span></div>` : ''}
+        ${qb > 0 ? `<div class="sumrow"><span class="l">Mostruário finalizado</span>
+          <span>${QTD(qb)} un · custo de ${BRL(vb)} já lançado no envio</span></div>` : ''}
         <div class="sumrow"><span class="l">Continua em posse</span><span>${QTD(rest)} un · custo ${BRL(cr)}</span></div>
         <div class="sumrow" style="border-top:1px solid var(--line);margin-top:6px;padding-top:9px">
           <span class="l">Produtos vendidos</span><span class="money">${BRL(vv)}</span></div>
@@ -353,12 +410,15 @@ function prestacaoContas(rev, posse) {
         <div class="sumrow" style="margin-top:8px"><span class="l">Lucro bruto do acerto</span>
           <span class="money pos">${BRL(lucro)}${vv ? ` (${PCT(lucro / vv * 100)})` : ''}</span></div>
         ${!cobra && vp > 0 ? `<div class="sumrow"><span class="l">Perda absorvida pela empresa</span><span class="money neg">${BRL(vp)}</span></div>` : ''}
-        ${qb > 0 ? `<div class="sumrow"><span class="l">(−) Baixa de mostruário</span><span class="money neg">${BRL(vb)}</span></div>` : ''}
-        ${(!cobra && vp > 0) || qb > 0 ? `<div class="sumrow"><span class="l">Resultado líquido do acerto</span><span class="money">${BRL(liq)}</span></div>` : ''}
+        ${!cobra && vp > 0 ? `<div class="sumrow"><span class="l">Resultado líquido do acerto</span><span class="money">${BRL(liq)}</span></div>` : ''}
       </div>
       ${qb > 0 ? `<div class="alert info" style="margin-top:12px"><span>ℹ</span><div>
-        A baixa de mostruário vira <b>despesa da empresa</b> de ${BRL(vb)}, na categoria
-        “Baixa de mostruário”. O revendedor não é cobrado por ela.</div></div>` : ''}
+        As ${QTD(qb)} amostra(s) finalizadas <b>não geram despesa nova</b>: o custo de
+        ${BRL(vb)} já foi lançado quando a remessa saiu. Elas apenas saem do seu estoque.
+        O revendedor não é cobrado.</div></div>` : ''}
+      ${vdm > 0 ? `<div class="alert info" style="margin-top:12px"><span>ℹ</span><div>
+        A devolução de amostras de mostruário <b>estorna ${BRL(vdm)}</b> de despesa: o produto
+        volta a ser seu, no estoque disponível.</div></div>` : ''}
       ${vp > 0 ? `<label class="chk" style="margin-top:12px"><input type="checkbox" id="pc_cobra" ${cobra ? 'checked' : ''}>
         Cobrar do revendedor os produtos perdidos (${BRL(vp)})</label>
         <div class="hint">Desmarcado, a perda vira despesa da empresa na categoria “Perda de estoque”.</div>` : ''}`;
@@ -375,8 +435,8 @@ function prestacaoContas(rev, posse) {
     const b = ev.target;
     const itens = linhas.filter(l => N(l.vend) + N(l.devo) + N(l.perd) + N(l.baix) > 0).map(l => ({
       remessa_item_id: l.remessa_item_id, vendida:N(l.vend), devolvida:N(l.devo),
-      perdida:N(l.perd), baixada:N(l.baix),
-      motivo: N(l.baix) > 0 ? (l.motivo || 'Amostra de mostruário baixada como custo da empresa')
+      perdida:N(l.perd), finalizada:N(l.baix),
+      motivo: N(l.baix) > 0 ? (l.motivo || 'Amostra de mostruário finalizada — acabou')
             : N(l.perd) > 0 ? (l.motivo || 'Perda informada na prestação de contas') : null }));
     if (!itens.length) return bad('Nada informado', 'Preencha ao menos uma quantidade.');
     if (!$('#pc_venc', m.body).value) return bad('Vencimento em branco', 'Informe a data de vencimento.');
@@ -641,6 +701,7 @@ async function fichaRemessa(v, id) {
   const r = await q(sb.from('remessas').select('*,revendedores(*),remessa_itens(*,produtos(codigo,nome,tamanho))').eq('id', id).single());
   crumb(`Mostruários › remessa nº ${r.numero}`);
   const dias = Math.floor((new Date(hoje()) - new Date(r.data_envio)) / 86400000);
+  const mostr = r.tipo === 'MOSTRUARIO' && r.status === 'CONFIRMADO';
   v.innerHTML = `
   <div class="page-head"><h1>Remessa nº ${r.numero}
     <span class="tag ${r.tipo === 'MOSTRUARIO' ? 'a' : 'v'}">${r.tipo === 'MOSTRUARIO' ? 'Mostruário' : 'Consignação'}</span>
@@ -652,27 +713,84 @@ async function fichaRemessa(v, id) {
   <div class="kpis k5">
     <div class="kpi"><div class="lab">Enviados</div><div class="val">${QTD(r.qtd_total_enviada)}</div></div>
     <div class="kpi violet"><div class="lab">Ainda em posse</div><div class="val">${QTD(r.qtd_em_posse)}</div></div>
-    <div class="kpi"><div class="lab">Valor de custo</div><div class="val">${BRL(r.valor_custo_total)}</div></div>
+    <div class="kpi"><div class="lab">${mostr ? 'Custo (já é despesa)' : 'Valor de custo'}</div><div class="val">${BRL(r.valor_custo_total)}</div></div>
     <div class="kpi green"><div class="lab">Valor de revenda</div><div class="val">${BRL(r.valor_revenda_total)}</div></div>
     <div class="kpi ${r.data_prevista_acerto && r.data_prevista_acerto < hoje() && N(r.qtd_em_posse) > 0 ? 'red' : ''}">
       <div class="lab">Previsão de acerto</div><div class="val" style="font-size:16px">${dBR(r.data_prevista_acerto)}</div></div>
   </div>
+  ${mostr ? `<div class="alert info"><span>ℹ</span><div>O custo destas amostras
+    (<b>${BRL(r.valor_custo_total)}</b>) já entrou como <b>despesa sua</b> no dia do envio —
+    uma vez só. Quando uma amostra acabar, marque como <b>finalizada</b>: ela sai do estoque
+    sem gerar custo novo. Se voltar para você, use <b>devolver</b> e a despesa é estornada
+    na proporção do que voltou.</div></div>` : ''}
   <div class="card"><div class="card-h"><h3>Itens</h3></div><div class="tw"><table class="dt"><thead><tr>
     <th>Produto</th><th class="c">Enviado</th><th class="c">Vendido</th><th class="c">Devolvido</th>
-    <th class="c">Perdido</th><th class="c">Em posse</th><th class="r">Custo un.</th><th class="r">Revenda un.</th></tr></thead><tbody>
+    <th class="c">${mostr ? 'Finalizado' : 'Perdido'}</th><th class="c">Em posse</th>
+    <th class="r">Custo un.</th><th class="r">Revenda un.</th>
+    ${mostr ? '<th class="r" style="width:190px">Ações</th>' : ''}</tr></thead><tbody>
     ${r.remessa_itens.map(i => `<tr>
       <td><a href="#produtos/${i.produto_id}"><b>${esc(i.produtos?.nome)}</b></a>
         <span style="display:block;font-size:11.5px;color:var(--mute)" class="num">${esc(i.produtos?.codigo)}</span></td>
       <td class="c">${QTD(i.quantidade)}</td>
       <td class="c pos">${N(i.qtd_vendida) ? QTD(i.qtd_vendida) : '—'}</td>
       <td class="c">${N(i.qtd_devolvida) ? QTD(i.qtd_devolvida) : '—'}</td>
-      <td class="c neg">${N(i.qtd_perdida) ? QTD(i.qtd_perdida) : '—'}</td>
+      <td class="c ${mostr ? '' : 'neg'}">${mostr
+          ? (N(i.qtd_baixada) ? QTD(i.qtd_baixada) : '—')
+          : (N(i.qtd_perdida) ? QTD(i.qtd_perdida) : '—')}</td>
       <td class="c"><b>${QTD(i.qtd_em_posse)}</b></td>
       <td class="r money">${BRL(i.valor_custo_unitario)}</td>
-      <td class="r money">${BRL(i.valor_revenda_unitario)}</td></tr>`).join('')}
+      <td class="r money">${BRL(i.valor_revenda_unitario)}</td>
+      ${mostr ? `<td class="r">${N(i.qtd_em_posse) > 0
+        ? `<button class="btn btn-s btn-sm" data-fin="${i.id}">✓ Finalizar</button>
+           <button class="btn btn-s btn-sm" data-dev="${i.id}">↩ Devolver</button>`
+        : '<span style="color:var(--mute);font-size:11.5px">encerrado</span>'}</td>` : ''}</tr>`).join('')}
   </tbody></table></div>
-  <div class="pager"><span>Conferência: enviado = vendido + devolvido + perdido + em posse ✓</span></div></div>
+  <div class="pager"><span>Conferência: enviado = vendido + devolvido + ${mostr ? 'finalizado' : 'perdido'} + em posse ✓</span></div></div>
   ${r.observacoes ? `<div class="card"><div class="card-b"><b style="font-size:12px;color:var(--mute)">OBSERVAÇÕES</b>
     <p style="margin-top:6px">${esc(r.observacoes)}</p></div></div>` : ''}`;
   $('#prBtn').onclick = () => imprimir(docRemessa(r));
+  const acao = (attr, cfg) => $$(`[data-${attr}]`).forEach(b => b.onclick = () => {
+    const it = r.remessa_itens.find(x => x.id === b.dataset[attr]);
+    baixaMostruario(cfg, it, r);
+  });
+  acao('fin', { rpc:'fn_finalizar_mostruario', titulo:'Finalizar amostra',
+    verbo:'Finalizar', motivoPadrao:'Amostra de mostruário finalizada — acabou',
+    aviso:'A amostra sai do seu estoque. <b>Nenhuma despesa nova</b> é lançada: o custo já entrou no envio da remessa.' });
+  acao('dev', { rpc:'fn_devolver_mostruario', titulo:'Devolver amostra ao estoque',
+    verbo:'Devolver', motivoPadrao:'Amostra de mostruário devolvida ao estoque',
+    aviso:'A amostra volta para o estoque disponível e a despesa lançada no envio é <b>estornada</b> na proporção do que voltou.' });
+}
+
+/* Finalizar e devolver amostra sem passar por prestação de contas: mostruário
+   nunca gera cobrança, então não faz sentido exigir um documento de acerto. */
+function baixaMostruario(cfg, item, remessa) {
+  const max = N(item.qtd_em_posse);
+  const m = modal({ titulo:`${cfg.titulo} · ${item.produtos?.nome || ''}`,
+    corpo:`<div class="alert info"><span>ℹ</span><div>${cfg.aviso}</div></div>
+      <div class="grid-f f2">
+        <div><label>Quantidade</label>
+          <input class="inp num" type="number" id="bm_q" min="0.001" step="1" max="${max}" value="${max}">
+          <div class="hint">O revendedor está com ${QTD(max)} un desta amostra.</div></div>
+        <div><label>Data</label>
+          <input class="inp" type="date" id="bm_d" value="${hoje()}" min="${remessa.data_envio}" max="${hoje()}"></div>
+      </div>
+      <div style="margin-top:12px"><label>Motivo (opcional)</label>
+        <input class="inp" id="bm_m" placeholder="${esc(cfg.motivoPadrao)}"></div>`,
+    rodape:`<button class="btn btn-s" data-x>Cancelar</button>
+            <button class="btn btn-p" data-ok>${cfg.verbo}</button>` });
+  $('[data-x]', m.foot).onclick = m.fechar;
+  $('[data-ok]', m.foot).onclick = async (ev) => {
+    const b = ev.target, qtd = N($('#bm_q', m.body).value);
+    if (qtd <= 0 || qtd > max)
+      return bad('Quantidade inválida', `Informe de 1 até ${QTD(max)} unidade(s).`);
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Salvando…';
+    try {
+      await rpc(cfg.rpc, { p_remessa_item_id:item.id, p_quantidade:qtd,
+        p_data:$('#bm_d', m.body).value || null,
+        p_motivo:$('#bm_m', m.body).value.trim() || null });
+      m.fechar(); ok(`${cfg.verbo} concluído`, 'Estoque, despesas e dashboard atualizados.');
+      navegar();
+    } catch (e) { bad('Não foi possível concluir', erroAmigavel(e));
+      b.disabled = false; b.textContent = cfg.verbo; }
+  };
 }

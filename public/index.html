@@ -964,7 +964,8 @@ ROTAS.dashboard = async (v) => {
     <div class="kpi"><div class="lab">Custo dos produtos</div><div class="val">${BRL(d.total_custo_produtos)}</div></div>
     <div class="kpi"><div class="lab">Frete</div><div class="val">${BRL(d.total_frete)}</div></div>
     <div class="kpi"><div class="lab">Taxa de cartão</div><div class="val">${BRL(d.total_taxa_cartao)}</div></div>
-    <div class="kpi violet"><div class="lab">Em mostruário</div><div class="val">${BRL(d.valor_mostruario)}</div></div>
+    <div class="kpi violet"><div class="lab">Custo de mostruário</div><div class="val">${BRL(d.total_custo_mostruario)}</div>
+      <div class="sub">já lançado como despesa</div></div>
   </div>
 
   <div class="sec-t">Estoque · posição atual</div>
@@ -972,7 +973,8 @@ ROTAS.dashboard = async (v) => {
     <div class="kpi blue"><div class="lab">Estoque disponível</div><div class="val">${BRL(d.valor_estoque_disponivel)}</div>
       <div class="sub">${QTD(d.qtd_estoque_disponivel)} un · ${d.produtos_disponiveis} produtos</div></div>
     <div class="kpi violet"><div class="lab">Com revendedores</div><div class="val">${BRL(d.valor_com_revendedores)}</div></div>
-    <div class="kpi blue"><div class="lab">Investimento total</div><div class="val">${BRL(d.investimento_total_mercadoria)}</div></div>
+    <div class="kpi blue"><div class="lab">Investimento total</div><div class="val">${BRL(d.investimento_total_mercadoria)}</div>
+      <div class="sub">sem mostruário: virou despesa</div></div>
     <div class="kpi"><div class="lab">Potencial de venda</div><div class="val">${BRL(d.potencial_venda_estoque)}</div></div>
     <div class="kpi green"><div class="lab">Lucro potencial</div>
       <div class="val">${BRL(N(d.potencial_venda_estoque) - N(d.investimento_total_mercadoria))}</div></div>
@@ -1270,7 +1272,7 @@ async function fichaProduto(v, id) {
   crumb(`Produtos › ${p.nome}`);
   const TIPOS = { ENTRADA_COMPRA:'Entrada por compra', SAIDA_VENDA:'Venda', SAIDA_REMESSA:'Envio a revendedor',
     RETORNO_DEVOLUCAO:'Devolução', BAIXA_VENDA_CONSIGNADA:'Venda em consignação', BAIXA_PERDA:'Perda',
-    BAIXA_MOSTRUARIO:'Baixa de mostruário',
+    BAIXA_MOSTRUARIO:'Mostruário finalizado',  /* saída da amostra; o custo já foi despesa no envio */
     RESERVA:'Reserva', LIBERACAO_RESERVA:'Liberação de reserva', AJUSTE_POSITIVO:'Ajuste (entrada)',
     AJUSTE_NEGATIVO:'Ajuste (saída)', ESTORNO:'Estorno' };
 
@@ -1443,6 +1445,15 @@ async function formCompra(v) {
             <option value="VALOR">Proporcional ao valor (recomendado)</option>
             <option value="QUANTIDADE">Proporcional à quantidade</option></select>
             <div class="hint">Por valor evita que o item barato absorva o frete do caro</div></div>
+        </div>
+        <div class="grid-f f3" style="margin-top:14px">
+          <div><label>Data do pagamento</label>
+            <input class="inp" type="date" id="c_dtpag" value="${hoje()}">
+            <div class="hint">Quando o dinheiro sai — aparece em Despesas</div></div>
+          <div><label>Forma de pagamento</label><select class="inp" id="c_fpag">
+            <option value="">—</option>${selectOpts(S.formas)}</select></div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:9px">
+            <label class="chk" style="margin:0"><input type="checkbox" id="c_pago" checked> Já está paga</label></div>
         </div></div></div>
 
       <div class="card"><div class="card-h"><h3>Produtos</h3>
@@ -1610,7 +1621,9 @@ async function formCompra(v) {
         fornecedor_id: $('#c_forn_id').value, data_compra: $('#c_data').value,
         numero_documento: $('#c_doc').value.trim() || null, criterio_rateio: $('#c_crit').value,
         valor_frete: N($('#c_frete').value), valor_taxa_cartao: N($('#c_taxa').value),
-        outros_custos: N($('#c_outros').value), observacoes: $('#c_obs').value.trim() || null
+        outros_custos: N($('#c_outros').value), observacoes: $('#c_obs').value.trim() || null,
+        data_pagamento: $('#c_dtpag').value || null, pago: $('#c_pago').checked,
+        forma_pagamento_id: $('#c_fpag').value || null
       }).select().single());
       compraId = c.id;
       await q(sb.from('compra_itens').insert(itens.map(i => ({
@@ -1629,13 +1642,15 @@ async function formCompra(v) {
 }
 
 async function fichaCompra(v, id) {
-  const c = await q(sb.from('compras').select('*,fornecedores(*),compra_itens(*,produtos(codigo,nome,tamanho))').eq('id', id).single());
+  const c = await q(sb.from('compras').select('*,fornecedores(*),formas_pagamento(nome),compra_itens(*,produtos(codigo,nome,tamanho))').eq('id', id).single());
   crumb(`Compras › nº ${c.numero}`);
   const badge = { RASCUNHO:['a','Rascunho'], CONFIRMADO:['g','Confirmada'], CANCELADO:['r','Cancelada'] }[c.status];
   v.innerHTML = `
   <div class="page-head"><h1>Compra nº ${c.numero} <span class="tag ${badge[0]}">${badge[1]}</span>
     <small>${dBR(c.data_compra)} · ${esc(c.fornecedores?.nome || '—')}${c.numero_documento ? ' · doc ' + esc(c.numero_documento) : ''}</small></h1>
     <div class="acts"><a class="btn btn-s btn-sm" href="#compras">← Voltar</a>
+      ${c.status !== 'CANCELADO' ? '<button class="btn btn-p btn-sm" id="edItens">✎ Produtos da compra</button>' : ''}
+      ${c.status === 'CONFIRMADO' && !c.pago ? '<button class="btn btn-g btn-sm" id="pagBtn">✓ Marcar paga</button>' : ''}
       ${c.status === 'CONFIRMADO' ? '<button class="btn btn-d btn-sm" id="canBtn">Cancelar compra</button>' : ''}</div></div>
   ${c.status === 'CANCELADO' ? `<div class="alert bad"><span>⛔</span><div><b>Compra cancelada</b> em ${dBR(c.data_cancelamento)}.<br>Motivo: ${esc(c.motivo_cancelamento || '')}</div></div>` : ''}
   <div class="kpis k5">
@@ -1664,10 +1679,26 @@ async function fichaCompra(v, id) {
     </table></div>
     <div class="pager"><span>A soma dos rateios (${BRL(c.compra_itens.reduce((a, i) => a + N(i.rateio_acessorio), 0))})
       confere exatamente com os custos acessórios (${BRL(c.custo_acessorio)}) ✓</span></div></div>
+  ${c.status === 'CONFIRMADO' ? `<div class="card"><div class="card-h"><h3>Pagamento ao fornecedor</h3>
+    <span class="tag ${c.pago ? 'g' : c.data_pagamento && c.data_pagamento < hoje() ? 'r' : 'a'}">${
+      c.pago ? 'Paga' : c.data_pagamento ? (c.data_pagamento < hoje() ? 'Vencida' : 'A pagar') : 'Sem data'}</span></div>
+    <div class="card-b"><div class="sumbox">
+      <div class="sumrow"><span class="l">Data prevista / do pagamento</span>
+        <span>${c.data_pagamento ? dBR(c.data_pagamento) : '—'}</span></div>
+      <div class="sumrow"><span class="l">Forma</span><span>${esc(c.formas_pagamento?.nome || '—')}</span></div>
+      <div class="sumrow tot"><span class="l">Valor</span><span class="money">${BRL(c.custo_total)}</span></div>
+    </div>
+    <div class="hint" style="margin-top:10px">Esta compra aparece em <a href="#despesas">Despesas › Compras a pagar</a>.
+      Ela não entra como despesa no resultado: o custo da mercadoria vira CMV quando o produto é vendido.</div>
+    </div></div>` : ''}
   ${c.observacoes ? `<div class="card"><div class="card-b"><b style="font-size:12px;color:var(--mute)">OBSERVAÇÕES</b>
     <p style="margin-top:6px">${esc(c.observacoes)}</p></div></div>` : ''}`;
 
   $('#prBtn').onclick = () => imprimir(docCompra(c));
+  const eb = $('#edItens'); if (eb) eb.onclick = () => formItensCompra(c);
+  const pb = $('#pagBtn'); if (pb) pb.onclick = () => formPagarCompra({
+    id:c.id, numero:c.numero, data_compra:c.data_compra, data_pagamento:c.data_pagamento,
+    custo_total:c.custo_total, fornecedor_nome:c.fornecedores?.nome });
   const cb = $('#canBtn');
   if (cb) cb.onclick = async () => {
     const motivo = await confirmar({ titulo:`Cancelar compra nº ${c.numero}`, pedirMotivo:true, textoBotao:'Cancelar compra',
@@ -1680,6 +1711,107 @@ async function fichaCompra(v, id) {
   };
 }
 
+/* Incluir e excluir produto de uma compra, inclusive já confirmada.
+   O banco desfaz a entrada de estoque, refaz o rateio de frete e taxa e dá
+   entrada de novo — por isso o custo unitário de TODOS os itens muda. */
+function formItensCompra(c) {
+  const itens = c.compra_itens.map(i => ({ produto_id:i.produto_id, nome:i.produtos?.nome,
+    codigo:i.produtos?.codigo, qtd:String(N(i.quantidade)), vu:String(N(i.valor_unitario)) }));
+  const confirmada = c.status === 'CONFIRMADO';
+
+  const m = modal({ titulo:`Produtos da compra nº ${c.numero}`, largura:'wide',
+    corpo:`${confirmada ? `<div class="alert warn"><span>⚠</span><div>Esta compra <b>já está confirmada</b>.
+      Ao salvar, o sistema tira do estoque tudo o que esta compra tinha colocado, refaz o rateio de
+      frete e taxa e dá entrada de novo — então o <b>custo unitário de todos os produtos da nota muda</b>.
+      Se alguma unidade desta compra já foi vendida, a alteração é recusada.</div></div>`
+      : '<div class="alert info"><span>ℹ</span><div>Compra em rascunho: pode mexer à vontade.</div></div>'}
+      <div class="tw"><table class="itens-tb" id="ectb"><thead><tr>
+        <th style="width:40%">Produto</th><th style="width:16%">Quantidade</th>
+        <th style="width:20%">Valor unitário</th><th style="width:18%" class="r">Subtotal</th>
+        <th style="width:6%"></th></tr></thead><tbody></tbody></table></div>
+      <div style="margin-top:10px"><button class="btn btn-s btn-sm" id="ecAdd">+ Adicionar produto</button></div>
+      <div class="grid-f f3" style="margin-top:16px">
+        <div><label>Frete</label><input class="inp num" type="number" step="0.01" min="0" id="ec_frete" value="${N(c.valor_frete).toFixed(2)}"></div>
+        <div><label>Taxa do cartão</label><input class="inp num" type="number" step="0.01" min="0" id="ec_taxa" value="${N(c.valor_taxa_cartao).toFixed(2)}"></div>
+        <div><label>Outros custos</label><input class="inp num" type="number" step="0.01" min="0" id="ec_outros" value="${N(c.outros_custos).toFixed(2)}"></div>
+      </div>
+      <div id="ec_resumo" style="margin-top:16px"></div>`,
+    rodape:`<button class="btn btn-s" data-x>Cancelar</button>
+            <button class="btn btn-p" data-ok>Salvar produtos</button>` });
+
+  const resumo = () => {
+    const sub = itens.reduce((a, i) => a + N(i.qtd) * N(i.vu), 0);
+    const ace = N($('#ec_frete', m.body).value) + N($('#ec_taxa', m.body).value) + N($('#ec_outros', m.body).value);
+    const base = c.criterio_rateio === 'QUANTIDADE' ? itens.reduce((a, i) => a + N(i.qtd), 0) : sub;
+    $('#ec_resumo', m.body).innerHTML = `<div class="sumbox">
+      <div class="sumrow"><span class="l">Produtos</span><span class="money">${BRL(sub)}</span></div>
+      <div class="sumrow"><span class="l">Frete, taxa e outros</span><span class="money">${BRL(ace)}</span></div>
+      <div class="sumrow tot"><span class="l">Custo total da compra</span><span class="money">${BRL(sub + ace)}</span></div>
+    </div>
+    ${itens.length && base > 0 ? `<div class="tw" style="margin-top:12px"><table class="dt"><thead><tr>
+      <th>Produto</th><th class="r">Rateio</th><th class="r">Custo unitário final</th></tr></thead><tbody>
+      ${itens.map(i => { const peso = c.criterio_rateio === 'QUANTIDADE' ? N(i.qtd) : N(i.qtd) * N(i.vu);
+        const rat = ace * (peso / base);
+        return `<tr><td>${esc(i.nome || '—')}</td><td class="r money" style="color:var(--amber)">${BRL(rat)}</td>
+          <td class="r money"><b>${BRL(N(i.qtd) ? (N(i.qtd) * N(i.vu) + rat) / N(i.qtd) : 0)}</b></td></tr>`;
+      }).join('')}</tbody></table></div>
+      <div class="hint">Prévia do rateio por ${c.criterio_rateio === 'QUANTIDADE' ? 'quantidade' : 'valor'}.
+        O valor definitivo é calculado pelo banco ao salvar.</div>` : ''}`;
+    $('[data-ok]', m.foot).disabled = !itens.length;
+  };
+
+  const render = () => {
+    $('#ectb tbody', m.body).innerHTML = itens.map((i, k) => `<tr data-i="${k}">
+      <td><input class="inp p-busca" placeholder="Digite para buscar…" autocomplete="off" value="${esc(i.nome || '')}">
+        ${i.codigo ? `<span style="display:block;font-size:11px;color:var(--mute)" class="num">${esc(i.codigo)}</span>` : ''}</td>
+      <td><input class="inp num q" type="number" min="0.001" step="1" value="${esc(i.qtd)}"></td>
+      <td><input class="inp num vu" type="number" min="0" step="0.01" value="${esc(i.vu)}"></td>
+      <td class="r money sub">${BRL(N(i.qtd) * N(i.vu))}</td>
+      <td class="c"><button class="btn btn-ghost btn-sm rm" title="Remover">✕</button></td></tr>`).join('');
+    $$('#ectb tbody tr', m.body).forEach(tr => {
+      const k = +tr.dataset.i, inp = $('.p-busca', tr);
+      const escolher = (p) => { itens[k].produto_id = p.id; itens[k].nome = p.nome; itens[k].codigo = p.codigo;
+        if (!N(itens[k].vu)) itens[k].vu = String(N(p.ultimo_custo) || N(p.custo_medio) || '');
+        render(); resumo(); };
+      autocomplete(inp, buscaProduto, escolher, fmtProd,
+        { aoCriar: (termo) => formProduto(null, escolher, { nome: termo }) });
+      $('.q', tr).oninput = (e) => { itens[k].qtd = e.target.value;
+        $('.sub', tr).textContent = BRL(N(itens[k].qtd) * N(itens[k].vu)); resumo(); };
+      $('.vu', tr).oninput = (e) => { itens[k].vu = e.target.value;
+        $('.sub', tr).textContent = BRL(N(itens[k].qtd) * N(itens[k].vu)); resumo(); };
+      $('.rm', tr).onclick = () => { itens.splice(k, 1); render(); resumo(); };
+    });
+    resumo();
+  };
+
+  $('#ecAdd', m.body).onclick = () => { itens.push({ qtd:'', vu:'' }); render();
+    setTimeout(() => { const l = $$('#ectb tbody .p-busca', m.body).pop(); if (l) l.focus(); }, 40); };
+  ['#ec_frete','#ec_taxa','#ec_outros'].forEach(x => $(x, m.body).addEventListener('input', resumo));
+  $('[data-x]', m.foot).onclick = m.fechar;
+
+  $('[data-ok]', m.foot).onclick = async (ev) => {
+    const b = ev.target;
+    if (!itens.length) return bad('Sem produtos', 'A compra precisa de ao menos um produto.');
+    for (const i of itens) {
+      if (!i.produto_id) return bad('Produto não selecionado',
+        'Em cada linha, digite o nome e clique no produto na lista que aparece.');
+      if (N(i.qtd) <= 0) return bad('Quantidade inválida', `Informe a quantidade de ${i.nome || 'todos os produtos'}.`);
+    }
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Salvando…';
+    try {
+      await rpc('fn_editar_itens_compra', { p_compra_id:c.id,
+        p_itens: itens.map(i => ({ produto_id:i.produto_id, quantidade:N(i.qtd), valor_unitario:N(i.vu) })),
+        p_valor_frete: N($('#ec_frete', m.body).value),
+        p_valor_taxa: N($('#ec_taxa', m.body).value),
+        p_outros_custos: N($('#ec_outros', m.body).value) });
+      m.fechar(); ok('Produtos atualizados', 'Estoque, rateio e custo médio recalculados.');
+      navegar();
+    } catch (e) { bad('Não foi possível salvar', erroAmigavel(e));
+      b.disabled = false; b.textContent = 'Salvar produtos'; }
+  };
+  render();
+}
+
 /* ═══════════════ ESTOQUE (Prompt 6) ═══════════════ */
 ROTAS.estoque = async (v) => {
   crumb('Estoque');
@@ -1690,7 +1822,7 @@ ROTAS.estoque = async (v) => {
   const t = (f) => prods.reduce((a, p) => a + N(p[f]), 0);
   const TIPOS = { ENTRADA_COMPRA:'Entrada por compra', SAIDA_VENDA:'Venda', SAIDA_REMESSA:'Envio a revendedor',
     RETORNO_DEVOLUCAO:'Devolução', BAIXA_VENDA_CONSIGNADA:'Venda em consignação', BAIXA_PERDA:'Perda',
-    BAIXA_MOSTRUARIO:'Baixa de mostruário',
+    BAIXA_MOSTRUARIO:'Mostruário finalizado',
     RESERVA:'Reserva', LIBERACAO_RESERVA:'Liberação', AJUSTE_POSITIVO:'Ajuste (entrada)',
     AJUSTE_NEGATIVO:'Ajuste (saída)', ESTORNO:'Estorno' };
 
@@ -1703,7 +1835,7 @@ ROTAS.estoque = async (v) => {
     <div class="kpi blue"><div class="lab">Disponível</div><div class="val">${BRL(t('valor_estoque_disponivel'))}</div>
       <div class="sub">${QTD(t('qtd_disponivel'))} unidades</div></div>
     <div class="kpi amber"><div class="lab">Mostruário</div><div class="val">${BRL(t('valor_mostruario'))}</div>
-      <div class="sub">${QTD(t('qtd_mostruario'))} unidades</div></div>
+      <div class="sub">${QTD(t('qtd_mostruario'))} un · custo já é despesa</div></div>
     <div class="kpi violet"><div class="lab">Consignado</div><div class="val">${BRL(t('valor_consignado'))}</div>
       <div class="sub">${QTD(t('qtd_consignado'))} unidades</div></div>
     <div class="kpi"><div class="lab">Investimento total</div><div class="val">${BRL(t('valor_total_custo'))}</div></div>
@@ -2211,16 +2343,18 @@ ROTAS.revendedores = async (v, id, aba) => {
 };
 
 async function fichaRevendedor(v, id, aba) {
-  const [r, posse, remessas, titulos, prests, recs] = await Promise.all([
+  const [r, posse, remessas, titulos, prests, recs, itens] = await Promise.all([
     q(sb.from('vw_extrato_revendedor').select('*').eq('id', id).single()),
     q(sb.from('vw_itens_em_posse').select('*').eq('revendedor_id', id).order('dias_em_posse', { ascending:false })),
     q(sb.from('remessas').select('*,remessa_itens(*,produtos(nome,codigo))').eq('revendedor_id', id).order('data_envio', { ascending:false })),
     q(sb.from('vw_titulos_receber').select('*').eq('revendedor_id', id).order('data_vencimento')),
     q(sb.from('prestacoes_contas').select('*').eq('revendedor_id', id).order('data_acerto', { ascending:false })),
-    q(sb.from('recebimentos').select('*,formas_pagamento(nome)').eq('revendedor_id', id).order('data_recebimento', { ascending:false }))
+    q(sb.from('recebimentos').select('*,formas_pagamento(nome)').eq('revendedor_id', id).order('data_recebimento', { ascending:false })),
+    q(sb.from('vw_itens_revendedor').select('*').eq('revendedor_id', id).order('data', { ascending:false }))
   ]);
   crumb(`Revendedores › ${r.nome}`);
   const atras = N(r.dias_max_em_posse) > 60;
+  const somaSit = (sit) => itens.filter(x => x.situacao === sit).reduce((a, x) => a + N(x.valor_total), 0);
 
   // Extrato cronológico com saldo corrido
   const mov = [];
@@ -2258,11 +2392,13 @@ async function fichaRevendedor(v, id, aba) {
       <div class="sub">consignação ${BRL(r.valor_vendido_consignacao)} · direto ${BRL(r.valor_vendido_direto)}</div></div>
     <div class="kpi ${N(r.saldo_aberto) > 0 ? 'amber' : 'green'}"><div class="lab">Situação financeira</div>
       <div class="val">${BRL(r.saldo_aberto)}</div>
-      <div class="sub">devido ${BRL(r.total_devido)} · pago ${BRL(r.total_pago)}</div></div>
+      <div class="sub">devido ${BRL(r.total_devido)} · pago ${BRL(r.total_pago)}${
+        N(r.saldo_credito) ? ' · 🎟 crédito ' + BRL(r.saldo_credito) : ''}</div></div>
   </div>
 
   <div class="tabs">
     <button class="on" data-t="posse">Em posse (${posse.length})</button>
+    <button data-t="tudo">Todos os produtos (${itens.length})</button>
     <button data-t="ext">Extrato financeiro</button>
     <button data-t="rem">Remessas (${remessas.length})</button>
     <button data-t="pc">Prestações (${prests.length})</button>
@@ -2286,6 +2422,23 @@ async function fichaRevendedor(v, id, aba) {
       <td colspan="3">Total</td><td class="c">${QTD(r.qtd_em_posse)}</td>
       <td class="r money">${BRL(r.valor_custo_em_posse)}</td><td class="r money">${BRL(r.valor_revenda_em_posse)}</td><td></td></tr></tfoot>` : ''}
     </table></div></div>
+
+  <div class="card" data-p="tudo" style="display:none"><div class="card-h"><h3>Todos os produtos que já pegou</h3>
+    <span class="tag g">pago ${BRL(somaSit('PAGO'))}</span>
+    <span class="tag a">a pagar ${BRL(somaSit('A_PAGAR'))}</span>
+    <button class="btn btn-s btn-sm" id="prTudo">🖨 Imprimir</button>
+    <button class="btn btn-s btn-sm" id="exTudo">📊 Excel</button></div>
+    <div class="filters"><select class="inp" id="fsit">
+      <option value="">Todas as situações</option>
+      <option value="PAGO">Pagos</option><option value="A_PAGAR">A pagar</option>
+      <option value="DEVOLVIDO">Devolvidos</option><option value="EM_POSSE">Em posse</option>
+      <option value="AMOSTRA">Mostruário</option><option value="PERDIDO">Perdidos</option>
+      <option value="AMOSTRA_FINALIZADA">Mostruário finalizado</option></select>
+      <input class="inp grow" id="ftq" placeholder="🔍 Buscar produto…"></div>
+    <div class="tw"><table class="dt"><thead><tr>
+      <th>Origem</th><th>Data</th><th>Produto</th><th class="c">Situação</th><th class="c">Qtd</th>
+      <th class="r">Preço unit.</th><th class="r">Total</th></tr></thead><tbody id="tbTudo"></tbody></table></div>
+    <div class="pager"><span id="cntTudo"></span></div></div>
 
   <div class="card" data-p="ext" style="display:none"><div class="card-h"><h3>Extrato financeiro</h3>
     <button class="btn btn-s btn-sm" id="prExt">🖨 Imprimir</button>
@@ -2346,6 +2499,31 @@ async function fichaRevendedor(v, id, aba) {
       : `<tr><td colspan="8">${vazio('💰','Nada a receber','Este revendedor não tem parcelas em aberto.')}</td></tr>`}
   </tbody></table></div></div>`;
 
+  const TAGSIT = { PAGO:'g', A_PAGAR:'a', DEVOLVIDO:'b', PERDIDO:'r', EM_POSSE:'n', AMOSTRA:'n', AMOSTRA_FINALIZADA:'n' };
+  const pintarTudo = () => {
+    const sit = $('#fsit').value, t = $('#ftq').value.trim().toLowerCase();
+    const f = itens.filter(x => (!sit || x.situacao === sit)
+      && (!t || (x.produto_nome + ' ' + x.produto_codigo).toLowerCase().includes(t)));
+    $('#cntTudo').textContent = `${f.length} linha(s) · ${QTD(f.reduce((a, x) => a + N(x.quantidade), 0))} un · ${BRL(f.reduce((a, x) => a + N(x.valor_total), 0))}`;
+    $('#tbTudo').innerHTML = f.length ? f.map(x => `<tr>
+      <td>${esc(x.documento)}</td><td class="nw">${dBR(x.data)}</td>
+      <td><b>${esc(x.produto_nome)}</b>
+        <span style="display:block;font-size:11px;color:var(--mute)" class="num">${esc(x.produto_codigo)}</span></td>
+      <td class="c"><span class="tag ${TAGSIT[x.situacao] || 'n'}">${esc(x.situacao_label)}</span></td>
+      <td class="c">${QTD(x.quantidade)}</td>
+      <td class="r money">${BRL(x.valor_unitario)}</td>
+      <td class="r money"><b>${BRL(x.valor_total)}</b></td></tr>`).join('')
+      : `<tr><td colspan="7">${vazio('📦','Nada aqui','Este revendedor ainda não pegou produto nenhum.')}</td></tr>`;
+  };
+  ['#fsit','#ftq'].forEach(x => $(x).addEventListener('input', pintarTudo));
+  pintarTudo();
+  $('#prTudo').onclick = () => imprimir(docItensRevendedor(r, itens));
+  $('#exTudo').onclick = () => exportarExcel(`produtos-${r.nome.replace(/\s+/g,'-').toLowerCase()}`, [
+    { t:'Origem', v:x => x.documento }, { t:'Data', v:x => dBR(x.data) },
+    { t:'Código', v:x => x.produto_codigo }, { t:'Produto', v:x => x.produto_nome },
+    { t:'Situação', v:x => x.situacao_label }, { t:'Quantidade', v:x => N(x.quantidade) },
+    { t:'Preço unitário', v:x => N(x.valor_unitario) }, { t:'Total', v:x => N(x.valor_total) }], itens);
+
   $$('[data-vc]').forEach(b => b.onclick = () =>
     formVencimento(titulos.find(t => t.id === b.dataset.vc), () => navegar()));
   $$('.tabs button').forEach(b => b.onclick = () => {
@@ -2378,8 +2556,9 @@ function prestacaoContas(rev, posse) {
   const m = modal({ titulo:`Prestação de contas · ${rev.nome}`, largura:'wide',
     corpo:`<div class="alert info"><span>ℹ</span><div>Informe, para cada produto, o que aconteceu com cada unidade.
       O que sobrar continua com o revendedor.<br>
-      <b>Mostruário é amostra e não se vende:</b> ou volta para o estoque, ou é
-      <b>baixado como custo da empresa</b> — nunca vira cobrança para o revendedor.</div></div>
+      <b>Mostruário é amostra e não se vende:</b> o custo dele já virou despesa sua no
+      envio da remessa. Ou volta para o estoque — e a despesa é estornada —, ou é marcado
+      como <b>finalizado</b> quando acaba. Nunca vira cobrança para o revendedor.</div></div>
       <div class="grid-f f3" style="margin-bottom:16px">
         <div><label>Data do acerto</label><input class="inp" type="date" id="pc_data" value="${hoje()}" max="${hoje()}"></div>
         <div><label>Condição de pagamento</label><select class="inp" id="pc_parc">
@@ -2401,15 +2580,17 @@ function prestacaoContas(rev, posse) {
         <th style="width:12%">Vendidas</th>
         <th style="width:12%">Devolvidas</th>
         <th style="width:12%">Perdidas</th>
-        <th style="width:12%">Baixa<br><span style="font-weight:400;font-size:10px">meu custo</span></th>
+        <th style="width:12%">Finalizadas<br><span style="font-weight:400;font-size:10px">acabou</span></th>
         <th class="c">Continua</th>
         <th class="r">A receber</th></tr></thead><tbody></tbody></table></div>
       <div id="pc_resumo" style="margin-top:16px"></div>`,
     rodape:`<button class="btn btn-s" data-x>Cancelar</button>
             <button class="btn btn-p" data-ok>Confirmar acerto</button>` });
 
-  /* Mostruário não tem venda: a coluna "Vendidas" fica travada e o que
-     vale é "Baixa". Consignação é o contrário. */
+  /* Mostruário só admite duas saídas: volta ao estoque (devolvida) ou acabou
+     (finalizada). Venda e perda ficam travadas — venda porque amostra não se
+     vende, perda porque o custo já foi lançado no envio e a perda o lançaria
+     de novo. Consignação é o contrário: tudo menos "finalizada". */
   const render = () => {
     $('#pctb tbody', m.body).innerHTML = linhas.map((l, i) => {
       const rest = N(l.qtd_em_posse) - N(l.vend) - N(l.devo) - N(l.perd) - N(l.baix);
@@ -2426,10 +2607,12 @@ function prestacaoContas(rev, posse) {
               value="${l.vend || ''}" placeholder="${l.mostruario ? '—' : '0'}"
               ${trava(l.mostruario, 'Mostruário é amostra e não pode ser vendido. Para vender, devolva ao estoque e registre uma venda normal.')}></td>
         <td><input class="inp num qd" type="number" min="0" step="1" max="${l.qtd_em_posse}" value="${l.devo || ''}" placeholder="0"></td>
-        <td><input class="inp num qp" type="number" min="0" step="1" max="${l.qtd_em_posse}" value="${l.perd || ''}" placeholder="0"></td>
+        <td><input class="inp num qp" type="number" min="0" step="1" max="${l.qtd_em_posse}"
+              value="${l.perd || ''}" placeholder="${l.mostruario ? '—' : '0'}"
+              ${trava(l.mostruario, 'Amostra de mostruário não entra como perda: o custo dela já foi lançado no envio. Marque como finalizada.')}></td>
         <td><input class="inp num qb" type="number" min="0" step="1" max="${l.qtd_em_posse}"
               value="${l.baix || ''}" placeholder="${l.mostruario ? '0' : '—'}"
-              ${trava(!l.mostruario, 'A baixa como custo da empresa vale só para mostruário. Em consignação use devolvido ou perdido.')}></td>
+              ${trava(!l.mostruario, 'Finalizar vale só para mostruário. Em consignação use devolvido ou perdido.')}></td>
         <td class="c ${inval ? 'neg' : ''}"><b>${QTD(rest)}</b></td>
         <td class="r money">${BRL(N(l.vend) * N(l.valor_revenda_unitario))}</td></tr>`;
     }).join('');
@@ -2468,7 +2651,7 @@ function prestacaoContas(rev, posse) {
   const resumo = () => {
     sincVenc();
     let qv = 0, qd = 0, qp = 0, qb = 0, vv = 0, cv = 0, vd = 0, vp = 0, vb = 0,
-        rest = 0, cr = 0, inval = false;
+        vdm = 0, rest = 0, cr = 0, inval = false;
     linhas.forEach(l => {
       const r2 = N(l.qtd_em_posse) - N(l.vend) - N(l.devo) - N(l.perd) - N(l.baix);
       if (r2 < 0) inval = true;
@@ -2478,20 +2661,26 @@ function prestacaoContas(rev, posse) {
       vd += N(l.devo) * N(l.valor_custo_unitario);
       vp += N(l.perd) * N(l.valor_custo_unitario);
       vb += N(l.baix) * N(l.valor_custo_unitario);
+      /* Devolução de mostruário estorna a despesa lançada no envio. */
+      if (l.mostruario) vdm += N(l.devo) * N(l.valor_custo_unitario);
       cr += Math.max(r2, 0) * N(l.valor_custo_unitario);
     });
     const cobra = $('#pc_cobra', m.body)?.checked ?? true;
     const devido = vv + (cobra ? vp : 0);
     const lucro = vv - cv;
-    const liq = lucro - (cobra ? 0 : vp) - vb;
+    /* A finalização de mostruário não entra no resultado do acerto: o custo
+       da amostra já foi despesa lá atrás, no envio da remessa. */
+    const liq = lucro - (cobra ? 0 : vp);
     $('#pc_resumo', m.body).innerHTML = `
       ${inval ? '<div class="alert bad"><span>⚠</span><div>Alguma linha soma mais do que o revendedor tem em posse. Corrija antes de confirmar.</div></div>' : ''}
       <div class="sumbox">
         <div class="sumrow"><span class="l">Vendidos</span><span>${QTD(qv)} un · revenda <b class="money">${BRL(vv)}</b> · custo ${BRL(cv)}</span></div>
         <div class="sumrow"><span class="l">Devolvidos</span><span>${QTD(qd)} un · volta ao estoque ${BRL(vd)} de custo</span></div>
         <div class="sumrow"><span class="l">Perdidos</span><span>${QTD(qp)} un · custo ${BRL(vp)}</span></div>
-        ${qb > 0 ? `<div class="sumrow"><span class="l">Baixa de mostruário</span>
-          <span>${QTD(qb)} un · <b class="money neg">${BRL(vb)}</b> de custo seu — não cobrado</span></div>` : ''}
+        ${qd > 0 && vdm > 0 ? `<div class="sumrow"><span class="l">↳ amostras de mostruário</span>
+          <span>estorna <b class="money pos">${BRL(vdm)}</b> de despesa já lançada</span></div>` : ''}
+        ${qb > 0 ? `<div class="sumrow"><span class="l">Mostruário finalizado</span>
+          <span>${QTD(qb)} un · custo de ${BRL(vb)} já lançado no envio</span></div>` : ''}
         <div class="sumrow"><span class="l">Continua em posse</span><span>${QTD(rest)} un · custo ${BRL(cr)}</span></div>
         <div class="sumrow" style="border-top:1px solid var(--line);margin-top:6px;padding-top:9px">
           <span class="l">Produtos vendidos</span><span class="money">${BRL(vv)}</span></div>
@@ -2500,12 +2689,15 @@ function prestacaoContas(rev, posse) {
         <div class="sumrow" style="margin-top:8px"><span class="l">Lucro bruto do acerto</span>
           <span class="money pos">${BRL(lucro)}${vv ? ` (${PCT(lucro / vv * 100)})` : ''}</span></div>
         ${!cobra && vp > 0 ? `<div class="sumrow"><span class="l">Perda absorvida pela empresa</span><span class="money neg">${BRL(vp)}</span></div>` : ''}
-        ${qb > 0 ? `<div class="sumrow"><span class="l">(−) Baixa de mostruário</span><span class="money neg">${BRL(vb)}</span></div>` : ''}
-        ${(!cobra && vp > 0) || qb > 0 ? `<div class="sumrow"><span class="l">Resultado líquido do acerto</span><span class="money">${BRL(liq)}</span></div>` : ''}
+        ${!cobra && vp > 0 ? `<div class="sumrow"><span class="l">Resultado líquido do acerto</span><span class="money">${BRL(liq)}</span></div>` : ''}
       </div>
       ${qb > 0 ? `<div class="alert info" style="margin-top:12px"><span>ℹ</span><div>
-        A baixa de mostruário vira <b>despesa da empresa</b> de ${BRL(vb)}, na categoria
-        “Baixa de mostruário”. O revendedor não é cobrado por ela.</div></div>` : ''}
+        As ${QTD(qb)} amostra(s) finalizadas <b>não geram despesa nova</b>: o custo de
+        ${BRL(vb)} já foi lançado quando a remessa saiu. Elas apenas saem do seu estoque.
+        O revendedor não é cobrado.</div></div>` : ''}
+      ${vdm > 0 ? `<div class="alert info" style="margin-top:12px"><span>ℹ</span><div>
+        A devolução de amostras de mostruário <b>estorna ${BRL(vdm)}</b> de despesa: o produto
+        volta a ser seu, no estoque disponível.</div></div>` : ''}
       ${vp > 0 ? `<label class="chk" style="margin-top:12px"><input type="checkbox" id="pc_cobra" ${cobra ? 'checked' : ''}>
         Cobrar do revendedor os produtos perdidos (${BRL(vp)})</label>
         <div class="hint">Desmarcado, a perda vira despesa da empresa na categoria “Perda de estoque”.</div>` : ''}`;
@@ -2522,8 +2714,8 @@ function prestacaoContas(rev, posse) {
     const b = ev.target;
     const itens = linhas.filter(l => N(l.vend) + N(l.devo) + N(l.perd) + N(l.baix) > 0).map(l => ({
       remessa_item_id: l.remessa_item_id, vendida:N(l.vend), devolvida:N(l.devo),
-      perdida:N(l.perd), baixada:N(l.baix),
-      motivo: N(l.baix) > 0 ? (l.motivo || 'Amostra de mostruário baixada como custo da empresa')
+      perdida:N(l.perd), finalizada:N(l.baix),
+      motivo: N(l.baix) > 0 ? (l.motivo || 'Amostra de mostruário finalizada — acabou')
             : N(l.perd) > 0 ? (l.motivo || 'Perda informada na prestação de contas') : null }));
     if (!itens.length) return bad('Nada informado', 'Preencha ao menos uma quantidade.');
     if (!$('#pc_venc', m.body).value) return bad('Vencimento em branco', 'Informe a data de vencimento.');
@@ -2788,6 +2980,7 @@ async function fichaRemessa(v, id) {
   const r = await q(sb.from('remessas').select('*,revendedores(*),remessa_itens(*,produtos(codigo,nome,tamanho))').eq('id', id).single());
   crumb(`Mostruários › remessa nº ${r.numero}`);
   const dias = Math.floor((new Date(hoje()) - new Date(r.data_envio)) / 86400000);
+  const mostr = r.tipo === 'MOSTRUARIO' && r.status === 'CONFIRMADO';
   v.innerHTML = `
   <div class="page-head"><h1>Remessa nº ${r.numero}
     <span class="tag ${r.tipo === 'MOSTRUARIO' ? 'a' : 'v'}">${r.tipo === 'MOSTRUARIO' ? 'Mostruário' : 'Consignação'}</span>
@@ -2799,29 +2992,86 @@ async function fichaRemessa(v, id) {
   <div class="kpis k5">
     <div class="kpi"><div class="lab">Enviados</div><div class="val">${QTD(r.qtd_total_enviada)}</div></div>
     <div class="kpi violet"><div class="lab">Ainda em posse</div><div class="val">${QTD(r.qtd_em_posse)}</div></div>
-    <div class="kpi"><div class="lab">Valor de custo</div><div class="val">${BRL(r.valor_custo_total)}</div></div>
+    <div class="kpi"><div class="lab">${mostr ? 'Custo (já é despesa)' : 'Valor de custo'}</div><div class="val">${BRL(r.valor_custo_total)}</div></div>
     <div class="kpi green"><div class="lab">Valor de revenda</div><div class="val">${BRL(r.valor_revenda_total)}</div></div>
     <div class="kpi ${r.data_prevista_acerto && r.data_prevista_acerto < hoje() && N(r.qtd_em_posse) > 0 ? 'red' : ''}">
       <div class="lab">Previsão de acerto</div><div class="val" style="font-size:16px">${dBR(r.data_prevista_acerto)}</div></div>
   </div>
+  ${mostr ? `<div class="alert info"><span>ℹ</span><div>O custo destas amostras
+    (<b>${BRL(r.valor_custo_total)}</b>) já entrou como <b>despesa sua</b> no dia do envio —
+    uma vez só. Quando uma amostra acabar, marque como <b>finalizada</b>: ela sai do estoque
+    sem gerar custo novo. Se voltar para você, use <b>devolver</b> e a despesa é estornada
+    na proporção do que voltou.</div></div>` : ''}
   <div class="card"><div class="card-h"><h3>Itens</h3></div><div class="tw"><table class="dt"><thead><tr>
     <th>Produto</th><th class="c">Enviado</th><th class="c">Vendido</th><th class="c">Devolvido</th>
-    <th class="c">Perdido</th><th class="c">Em posse</th><th class="r">Custo un.</th><th class="r">Revenda un.</th></tr></thead><tbody>
+    <th class="c">${mostr ? 'Finalizado' : 'Perdido'}</th><th class="c">Em posse</th>
+    <th class="r">Custo un.</th><th class="r">Revenda un.</th>
+    ${mostr ? '<th class="r" style="width:190px">Ações</th>' : ''}</tr></thead><tbody>
     ${r.remessa_itens.map(i => `<tr>
       <td><a href="#produtos/${i.produto_id}"><b>${esc(i.produtos?.nome)}</b></a>
         <span style="display:block;font-size:11.5px;color:var(--mute)" class="num">${esc(i.produtos?.codigo)}</span></td>
       <td class="c">${QTD(i.quantidade)}</td>
       <td class="c pos">${N(i.qtd_vendida) ? QTD(i.qtd_vendida) : '—'}</td>
       <td class="c">${N(i.qtd_devolvida) ? QTD(i.qtd_devolvida) : '—'}</td>
-      <td class="c neg">${N(i.qtd_perdida) ? QTD(i.qtd_perdida) : '—'}</td>
+      <td class="c ${mostr ? '' : 'neg'}">${mostr
+          ? (N(i.qtd_baixada) ? QTD(i.qtd_baixada) : '—')
+          : (N(i.qtd_perdida) ? QTD(i.qtd_perdida) : '—')}</td>
       <td class="c"><b>${QTD(i.qtd_em_posse)}</b></td>
       <td class="r money">${BRL(i.valor_custo_unitario)}</td>
-      <td class="r money">${BRL(i.valor_revenda_unitario)}</td></tr>`).join('')}
+      <td class="r money">${BRL(i.valor_revenda_unitario)}</td>
+      ${mostr ? `<td class="r">${N(i.qtd_em_posse) > 0
+        ? `<button class="btn btn-s btn-sm" data-fin="${i.id}">✓ Finalizar</button>
+           <button class="btn btn-s btn-sm" data-dev="${i.id}">↩ Devolver</button>`
+        : '<span style="color:var(--mute);font-size:11.5px">encerrado</span>'}</td>` : ''}</tr>`).join('')}
   </tbody></table></div>
-  <div class="pager"><span>Conferência: enviado = vendido + devolvido + perdido + em posse ✓</span></div></div>
+  <div class="pager"><span>Conferência: enviado = vendido + devolvido + ${mostr ? 'finalizado' : 'perdido'} + em posse ✓</span></div></div>
   ${r.observacoes ? `<div class="card"><div class="card-b"><b style="font-size:12px;color:var(--mute)">OBSERVAÇÕES</b>
     <p style="margin-top:6px">${esc(r.observacoes)}</p></div></div>` : ''}`;
   $('#prBtn').onclick = () => imprimir(docRemessa(r));
+  const acao = (attr, cfg) => $$(`[data-${attr}]`).forEach(b => b.onclick = () => {
+    const it = r.remessa_itens.find(x => x.id === b.dataset[attr]);
+    baixaMostruario(cfg, it, r);
+  });
+  acao('fin', { rpc:'fn_finalizar_mostruario', titulo:'Finalizar amostra',
+    verbo:'Finalizar', motivoPadrao:'Amostra de mostruário finalizada — acabou',
+    aviso:'A amostra sai do seu estoque. <b>Nenhuma despesa nova</b> é lançada: o custo já entrou no envio da remessa.' });
+  acao('dev', { rpc:'fn_devolver_mostruario', titulo:'Devolver amostra ao estoque',
+    verbo:'Devolver', motivoPadrao:'Amostra de mostruário devolvida ao estoque',
+    aviso:'A amostra volta para o estoque disponível e a despesa lançada no envio é <b>estornada</b> na proporção do que voltou.' });
+}
+
+/* Finalizar e devolver amostra sem passar por prestação de contas: mostruário
+   nunca gera cobrança, então não faz sentido exigir um documento de acerto. */
+function baixaMostruario(cfg, item, remessa) {
+  const max = N(item.qtd_em_posse);
+  const m = modal({ titulo:`${cfg.titulo} · ${item.produtos?.nome || ''}`,
+    corpo:`<div class="alert info"><span>ℹ</span><div>${cfg.aviso}</div></div>
+      <div class="grid-f f2">
+        <div><label>Quantidade</label>
+          <input class="inp num" type="number" id="bm_q" min="0.001" step="1" max="${max}" value="${max}">
+          <div class="hint">O revendedor está com ${QTD(max)} un desta amostra.</div></div>
+        <div><label>Data</label>
+          <input class="inp" type="date" id="bm_d" value="${hoje()}" min="${remessa.data_envio}" max="${hoje()}"></div>
+      </div>
+      <div style="margin-top:12px"><label>Motivo (opcional)</label>
+        <input class="inp" id="bm_m" placeholder="${esc(cfg.motivoPadrao)}"></div>`,
+    rodape:`<button class="btn btn-s" data-x>Cancelar</button>
+            <button class="btn btn-p" data-ok>${cfg.verbo}</button>` });
+  $('[data-x]', m.foot).onclick = m.fechar;
+  $('[data-ok]', m.foot).onclick = async (ev) => {
+    const b = ev.target, qtd = N($('#bm_q', m.body).value);
+    if (qtd <= 0 || qtd > max)
+      return bad('Quantidade inválida', `Informe de 1 até ${QTD(max)} unidade(s).`);
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Salvando…';
+    try {
+      await rpc(cfg.rpc, { p_remessa_item_id:item.id, p_quantidade:qtd,
+        p_data:$('#bm_d', m.body).value || null,
+        p_motivo:$('#bm_m', m.body).value.trim() || null });
+      m.fechar(); ok(`${cfg.verbo} concluído`, 'Estoque, despesas e dashboard atualizados.');
+      navegar();
+    } catch (e) { bad('Não foi possível concluir', erroAmigavel(e));
+      b.disabled = false; b.textContent = cfg.verbo; }
+  };
 }
 /* ═══════════════ VENDAS (Prompt 10) ═══════════════ */
 ROTAS.vendas = async (v, id) => {
@@ -3213,15 +3463,23 @@ async function formVenda(v) {
 }
 
 async function fichaVenda(v, id) {
-  const [vd, tits] = await Promise.all([
+  const [vd, tits, devs] = await Promise.all([
     q(sb.from('vendas').select('*,clientes(*),revendedores(*),formas_pagamento(nome),venda_itens(*,produtos(codigo,nome,tamanho))').eq('id', id).single()),
-    q(sb.from('vw_titulos_receber').select('*').eq('venda_id', id).order('numero_parcela'))
+    q(sb.from('vw_titulos_receber').select('*').eq('venda_id', id).order('numero_parcela')),
+    q(sb.from('venda_devolucoes').select('*,produtos(codigo,nome)').eq('venda_id', id).order('data_devolucao'))
   ]);
   crumb(`Vendas › nº ${vd.numero}`);
   const comp = vd.clientes || vd.revendedores;
   const badge = { RASCUNHO:['a','Rascunho'], CONFIRMADO:['g','Confirmada'], CANCELADO:['r','Cancelada'] }[vd.status];
   const recebido = tits.reduce((a, t) => a + N(t.valor_recebido), 0);
   const aberto = tits.filter(t => t.situacao === 'ABERTO').reduce((a, t) => a + N(t.saldo), 0);
+  /* Devolução não apaga a venda: o documento continua mostrando o que saiu.
+     O que muda é o resultado, que passa a ser líquido do que voltou. */
+  const devolvido = N(vd.valor_devolvido);
+  const receita = N(vd.valor_total) - devolvido;
+  const cmv = N(vd.custo_total) - N(vd.custo_devolvido);
+  const lucro = receita - cmv;
+  const podeDevolver = vd.status === 'CONFIRMADO';
 
   v.innerHTML = `
   <div class="page-head"><h1>Venda nº ${vd.numero} <span class="tag ${badge[0]}">${badge[1]}</span>
@@ -3229,27 +3487,49 @@ async function fichaVenda(v, id) {
       ${esc(vd.formas_pagamento?.nome)}${vd.qtd_parcelas > 1 ? ` em ${vd.qtd_parcelas}×` : ' à vista'}</small></h1>
     <div class="acts"><a class="btn btn-s btn-sm" href="#vendas">← Voltar</a>
       <button class="btn btn-s btn-sm" id="recBtn">🧾 Recibo</button>
+      ${podeDevolver && vd.venda_itens.some(i => N(i.quantidade) - N(i.qtd_devolvida) > 0)
+        ? '<button class="btn btn-s btn-sm" id="devBtn">↩ Devolver produto</button>' : ''}
       ${comp?.whatsapp ? `<a class="btn btn-g btn-sm" target="_blank" href="https://wa.me/55${comp.whatsapp}">WhatsApp</a>` : ''}
       ${vd.status === 'CONFIRMADO' ? '<button class="btn btn-d btn-sm" id="canBtn">Cancelar venda</button>' : ''}</div></div>
   ${vd.status === 'CANCELADO' ? `<div class="alert bad"><span>⛔</span><div><b>Venda cancelada</b> em ${dBR(vd.data_cancelamento)}.<br>Motivo: ${esc(vd.motivo_cancelamento || '')}</div></div>` : ''}
   <div class="kpis k5">
     <div class="kpi"><div class="lab">Subtotal</div><div class="val">${BRL(vd.subtotal)}</div></div>
     <div class="kpi"><div class="lab">Desconto</div><div class="val">${BRL(vd.desconto_valor)}</div></div>
-    <div class="kpi green"><div class="lab">Total</div><div class="val">${BRL(vd.valor_total)}</div></div>
-    <div class="kpi"><div class="lab">Custo (CMV)</div><div class="val">${BRL(vd.custo_total)}</div></div>
-    <div class="kpi green"><div class="lab">Lucro bruto</div><div class="val">${BRL(vd.lucro_bruto)}</div>
-      <div class="sub">margem ${PCT(N(vd.valor_total) ? N(vd.lucro_bruto) / N(vd.valor_total) * 100 : 0)}</div></div>
+    <div class="kpi green"><div class="lab">Total${devolvido ? ' líquido' : ''}</div><div class="val">${BRL(receita)}</div>
+      ${devolvido ? `<div class="sub">${BRL(vd.valor_total)} − ${BRL(devolvido)} devolvidos</div>` : ''}</div>
+    <div class="kpi"><div class="lab">Custo (CMV)</div><div class="val">${BRL(cmv)}</div></div>
+    <div class="kpi green"><div class="lab">Lucro bruto</div><div class="val">${BRL(lucro)}</div>
+      <div class="sub">margem ${PCT(receita ? lucro / receita * 100 : 0)}</div></div>
   </div>
   <div class="card"><div class="card-h"><h3>Itens</h3></div><div class="tw"><table class="dt"><thead><tr>
-    <th>Produto</th><th class="r">Qtd</th><th class="r">Preço unit.</th><th class="r">Subtotal</th>
-    <th class="r">Custo unit.</th><th class="r">Lucro</th></tr></thead><tbody>
-    ${vd.venda_itens.map(i => `<tr>
+    <th>Produto</th><th class="r">Qtd</th><th class="r">Devolvidas</th><th class="r">Preço unit.</th>
+    <th class="r">Subtotal</th><th class="r">Custo unit.</th><th class="r">Lucro</th>
+    ${podeDevolver ? '<th class="r" style="width:120px"></th>' : ''}</tr></thead><tbody>
+    ${vd.venda_itens.map(i => { const dv = N(i.qtd_devolvida), rest = N(i.quantidade) - dv; return `<tr>
       <td><a href="#produtos/${i.produto_id}"><b>${esc(i.produtos?.nome)}</b></a>
         <span style="display:block;font-size:11.5px;color:var(--mute)" class="num">${esc(i.produtos?.codigo)}</span></td>
-      <td class="r">${QTD(i.quantidade)}</td><td class="r money">${BRL(i.preco_unitario)}</td>
+      <td class="r">${QTD(i.quantidade)}</td>
+      <td class="r ${dv ? 'neg' : ''}">${dv ? QTD(dv) : '—'}</td>
+      <td class="r money">${BRL(i.preco_unitario)}</td>
       <td class="r money">${BRL(i.subtotal)}</td><td class="r money">${BRL(i.custo_unitario_praticado)}</td>
-      <td class="r money ${N(i.lucro_item) >= 0 ? 'pos' : 'neg'}">${BRL(i.lucro_item)}</td></tr>`).join('')}
+      <td class="r money ${N(i.lucro_item) >= 0 ? 'pos' : 'neg'}">${BRL(i.lucro_item)}</td>
+      ${podeDevolver ? `<td class="r">${rest > 0
+        ? `<button class="btn btn-s btn-sm" data-dv="${i.id}">↩ Devolver</button>`
+        : '<span style="color:var(--mute);font-size:11.5px">tudo devolvido</span>'}</td>` : ''}</tr>`; }).join('')}
   </tbody></table></div></div>
+  ${devs.length ? `<div class="card"><div class="card-h"><h3>Devoluções</h3>
+    <span class="tag a">${BRL(devolvido)} devolvidos</span></div><div class="tw"><table class="dt"><thead><tr>
+    <th>Data</th><th>Produto</th><th class="r">Qtd</th><th class="r">Valor unit.</th><th class="r">Total</th>
+    <th class="r">Abatido da dívida</th><th class="r">Virou crédito</th><th>Motivo</th></tr></thead><tbody>
+    ${devs.map(d => `<tr>
+      <td class="nw">${dBR(d.data_devolucao)}</td>
+      <td><b>${esc(d.produtos?.nome)}</b></td>
+      <td class="r">${QTD(d.quantidade)}</td><td class="r money">${BRL(d.valor_unitario)}</td>
+      <td class="r money"><b>${BRL(d.valor_total)}</b></td>
+      <td class="r money pos">${BRL(d.valor_abatido)}</td>
+      <td class="r money">${N(d.valor_credito) ? BRL(d.valor_credito) : '—'}</td>
+      <td>${esc(d.motivo || '—')}</td></tr>`).join('')}
+  </tbody></table></div></div>` : ''}
   <div class="card"><div class="card-h"><h3>Parcelas</h3>
     <span class="tag ${aberto <= 0 ? 'g' : 'a'}">${aberto <= 0 ? 'Quitada' : BRL(aberto) + ' em aberto'}</span></div>
     <div class="tw"><table class="dt"><thead><tr>
@@ -3265,13 +3545,37 @@ async function fichaVenda(v, id) {
            <button class="btn btn-s btn-sm" data-vc="${t.id}" title="Alterar vencimento">📅</button>` : ''}</td></tr>`).join('')
       : `<tr><td colspan="7">${vazio('💰','Sem parcelas','Esta venda não gerou títulos.')}</td></tr>`}
   </tbody><tfoot><tr style="background:#fbfcfe;font-weight:700">
-    <td colspan="2">Total</td><td class="r money">${BRL(vd.valor_total)}</td>
+    <td colspan="2">Total</td><td class="r money">${BRL(receita)}</td>
     <td class="r money pos">${BRL(recebido)}</td><td class="r money">${BRL(aberto)}</td><td colspan="2"></td></tr></tfoot>
   </table></div></div>
   ${vd.observacoes ? `<div class="card"><div class="card-b"><b style="font-size:12px;color:var(--mute)">OBSERVAÇÕES</b>
     <p style="margin-top:6px">${esc(vd.observacoes)}</p></div></div>` : ''}`;
 
   $('#recBtn').onclick = () => reciboVenda(id);
+  $$('[data-dv]').forEach(b => b.onclick = () => {
+    const it = vd.venda_itens.find(x => x.id === b.dataset.dv);
+    formDevolucaoVenda(vd, it, aberto);
+  });
+  /* Em tela estreita a tabela de itens rola na horizontal e o botão da linha
+     fica fora de vista. Este atalho no topo resolve: com um produto só vai
+     direto, com vários pergunta qual. */
+  const db = $('#devBtn');
+  if (db) db.onclick = () => {
+    const disp = vd.venda_itens.filter(i => N(i.quantidade) - N(i.qtd_devolvida) > 0);
+    if (disp.length === 1) return formDevolucaoVenda(vd, disp[0], aberto);
+    const m = modal({ titulo:'Qual produto o cliente devolveu?',
+      corpo:`<div style="display:grid;gap:8px">${disp.map(i => `
+        <button class="btn btn-s esc" data-i="${i.id}"
+          style="justify-content:flex-start;text-align:left;padding:11px 13px;height:auto">
+          <span style="display:block"><b style="font-size:13.5px">${esc(i.produtos?.nome)}</b>
+          <span style="display:block;font-size:11.5px;color:var(--mute);font-weight:400">
+            ${QTD(N(i.quantidade) - N(i.qtd_devolvida))} un disponível(is) ·
+            ${BRL(N(i.subtotal) / N(i.quantidade))} cada</span></span></button>`).join('')}</div>`,
+      rodape:'<button class="btn btn-s" data-x>Cancelar</button>' });
+    $('[data-x]', m.foot).onclick = m.fechar;
+    $$('.esc', m.body).forEach(b => b.onclick = () => {
+      m.fechar(); formDevolucaoVenda(vd, disp.find(i => i.id === b.dataset.i), aberto); });
+  };
   $$('[data-rc]').forEach(b => b.onclick = async () => {
     const t = tits.find(x => x.id === b.dataset.rc);
     formRecebimento(vd.tipo === 'CONSUMIDOR' ? 'CLIENTE' : 'REVENDEDOR', comp, [t]);
@@ -3294,10 +3598,127 @@ async function fichaVenda(v, id) {
   };
 }
 
+/* Devolução de produto vendido, item a item.
+   O produto volta ao estoque de venda e o valor sai do que o comprador deve.
+   Se ele já tinha pago, o valor vira crédito a favor dele. */
+function formDevolucaoVenda(vd, item, abertoTotal) {
+  const max = N(item.quantidade) - N(item.qtd_devolvida);
+  /* Preço efetivamente cobrado: subtotal do item já é líquido do desconto do
+     item; o desconto do cabeçalho entra pelo mesmo fator, como no banco. */
+  const fator = N(vd.subtotal) > 0 ? N(vd.valor_total) / N(vd.subtotal) : 1;
+  const vu = Math.round((N(item.subtotal) / N(item.quantidade)) * fator * 100) / 100;
+
+  const m = modal({ titulo:`Devolver · ${item.produtos?.nome || ''}`,
+    corpo:`<div class="alert info"><span>ℹ</span><div>O produto volta para o
+      <b>estoque disponível</b> e o valor sai do que ${esc(vd.clientes?.nome || vd.revendedores?.nome || 'o comprador')}
+      tem a pagar, começando pela parcela mais antiga. O que passar do que ele ainda deve
+      vira <b>crédito</b> a favor dele, para abater numa próxima compra.</div></div>
+      <div class="grid-f f2">
+        <div><label>Quantidade a devolver</label>
+          <input class="inp num" type="number" id="dv_q" min="0.001" step="1" max="${max}" value="${max}">
+          <div class="hint">Restam ${QTD(max)} un desta venda · ${BRL(vu)} cada</div></div>
+        <div><label>Data da devolução</label>
+          <input class="inp" type="date" id="dv_d" value="${hoje()}" min="${vd.data_venda}" max="${hoje()}"></div>
+      </div>
+      <div style="margin-top:12px"><label>Motivo (opcional)</label>
+        <input class="inp" id="dv_m" placeholder="Ex.: não gostou da fragrância, frasco com defeito"></div>
+      <div id="dv_resumo" style="margin-top:16px"></div>`,
+    rodape:`<button class="btn btn-s" data-x>Cancelar</button>
+            <button class="btn btn-p" data-ok>Confirmar devolução</button>` });
+
+  const resumo = () => {
+    const q2 = N($('#dv_q', m.body).value);
+    const val = Math.round(q2 * vu * 100) / 100;
+    const abate = Math.min(val, N(abertoTotal));
+    const cred = Math.round((val - abate) * 100) / 100;
+    $('#dv_resumo', m.body).innerHTML = `<div class="sumbox">
+      <div class="sumrow"><span class="l">Valor da devolução</span><span class="money">${BRL(val)}</span></div>
+      <div class="sumrow"><span class="l">Abate do que ele deve</span><span class="money pos">${BRL(abate)}</span></div>
+      ${cred > 0 ? `<div class="sumrow"><span class="l">Vira crédito a favor dele</span><span class="money">${BRL(cred)}</span></div>` : ''}
+      <div class="sumrow tot"><span class="l">Fica devendo depois</span>
+        <span class="money">${BRL(Math.max(0, N(abertoTotal) - abate))}</span></div>
+    </div>
+    ${cred > 0 ? `<div class="alert info" style="margin-top:12px"><span>ℹ</span><div>
+      ${BRL(cred)} viram crédito porque essa parte já estava paga. O crédito aparece na ficha
+      dele e pode abater qualquer parcela em aberto.</div></div>` : ''}`;
+    $('[data-ok]', m.foot).disabled = !(q2 > 0 && q2 <= max);
+  };
+
+  $('[data-x]', m.foot).onclick = m.fechar;
+  $('#dv_q', m.body).oninput = resumo;
+  $('[data-ok]', m.foot).onclick = async (ev) => {
+    const b = ev.target, qtd = N($('#dv_q', m.body).value);
+    if (qtd <= 0 || qtd > max)
+      return bad('Quantidade inválida', `Informe de 1 até ${QTD(max)} unidade(s).`);
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Devolvendo…';
+    try {
+      await rpc('fn_devolver_item_venda', { p_venda_item_id:item.id, p_quantidade:qtd,
+        p_data:$('#dv_d', m.body).value || null, p_motivo:$('#dv_m', m.body).value.trim() || null });
+      m.fechar(); ok('Devolução registrada', 'Produto de volta ao estoque e dívida atualizada.');
+      navegar();
+    } catch (e) { bad('Não foi possível devolver', erroAmigavel(e));
+      b.disabled = false; b.textContent = 'Confirmar devolução'; }
+  };
+  resumo();
+}
+
+/* Usar crédito para abater uma parcela em aberto. */
+async function formUsarCredito(titulo, aoSalvar) {
+  const creds = await q(sb.from('vw_creditos').select('*').gt('saldo', 0)
+    .eq(titulo.tipo_devedor === 'CLIENTE' ? 'cliente_id' : 'revendedor_id',
+        titulo.tipo_devedor === 'CLIENTE' ? titulo.cliente_id : titulo.revendedor_id)
+    .order('data_credito'));
+  if (!creds.length) return warn('Sem crédito', 'Esta pessoa não tem crédito disponível.');
+  const total = creds.reduce((a, c) => a + N(c.saldo), 0);
+  const usar = Math.min(total, N(titulo.saldo));
+
+  const m = modal({ titulo:'Usar crédito na parcela',
+    corpo:`<div class="alert info"><span>ℹ</span><div>O crédito nasce de devolução de produto
+      já pago. Usar aqui <b>reduz a parcela</b> — não é entrada de dinheiro no caixa.</div></div>
+      <div class="sumbox" style="margin-bottom:14px">
+        <div class="sumrow"><span class="l">Parcela ${titulo.numero_parcela}/${titulo.total_parcelas}</span>
+          <span class="money">${BRL(titulo.saldo)} em aberto</span></div>
+        <div class="sumrow"><span class="l">Crédito disponível</span><span class="money pos">${BRL(total)}</span></div>
+      </div>
+      <div class="grid-f f2">
+        <div><label>Valor a usar</label>
+          <input class="inp num" type="number" id="cr_v" min="0.01" step="0.01" max="${usar}" value="${usar.toFixed(2)}"></div>
+        <div><label>Data</label><input class="inp" type="date" id="cr_d" value="${hoje()}" max="${hoje()}"></div>
+      </div>`,
+    rodape:`<button class="btn btn-s" data-x>Cancelar</button>
+            <button class="btn btn-p" data-ok>Usar crédito</button>` });
+  $('[data-x]', m.foot).onclick = m.fechar;
+  $('[data-ok]', m.foot).onclick = async (ev) => {
+    const b = ev.target; let falta = N($('#cr_v', m.body).value);
+    if (falta <= 0 || falta > usar + 0.001)
+      return bad('Valor inválido', `Informe até ${BRL(usar)}.`);
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Aplicando…';
+    try {
+      /* Consome os créditos mais antigos primeiro. */
+      for (const c of creds) {
+        if (falta <= 0) break;
+        const v2 = Math.min(N(c.saldo), falta);
+        await rpc('fn_usar_credito', { p_credito_id:c.id, p_titulo_id:titulo.id,
+          p_valor:v2, p_data:$('#cr_d', m.body).value || null });
+        falta = Math.round((falta - v2) * 100) / 100;
+      }
+      m.fechar(); ok('Crédito aplicado', 'A parcela foi reduzida.');
+      (aoSalvar || navegar)();
+    } catch (e) { bad('Não foi possível usar o crédito', erroAmigavel(e));
+      b.disabled = false; b.textContent = 'Usar crédito'; }
+  };
+}
+
 /* ═══════════════ CONTAS A RECEBER (Prompt 11) ═══════════════ */
 ROTAS.receber = async (v, filtro) => {
   crumb('Contas a receber');
-  const tits = await q(sb.from('vw_titulos_receber').select('*').neq('situacao','CANCELADO').order('data_vencimento'));
+  const [tits, creds] = await Promise.all([
+    q(sb.from('vw_titulos_receber').select('*').neq('situacao','CANCELADO').order('data_vencimento')),
+    q(sb.from('vw_creditos').select('*').gt('saldo', 0))
+  ]);
+  /* Quem tem crédito de devolução pode abatê-lo de qualquer parcela em aberto. */
+  const temCredito = (x) => creds.some(c => c.tipo_devedor === x.tipo_devedor
+    && (c.cliente_id || c.revendedor_id) === (x.cliente_id || x.revendedor_id));
   const ab = tits.filter(t => t.situacao === 'ABERTO');
   const venc = ab.filter(t => /VENCIDO/.test(t.situacao_real));
   const breve = ab.filter(t => t.situacao_real === 'VENCE_EM_BREVE');
@@ -3317,7 +3738,8 @@ ROTAS.receber = async (v, filtro) => {
     <div class="kpi amber"><div class="lab">Vence em breve</div><div class="val">${BRL(s(breve))}</div></div>
     <div class="kpi blue"><div class="lab">A vencer</div><div class="val">${BRL(s(fut))}</div></div>
     <div class="kpi ${s(ab) && s(venc) / s(ab) * 100 > 10 ? 'red' : ''}"><div class="lab">Inadimplência</div>
-      <div class="val">${PCT(s(ab) ? s(venc) / s(ab) * 100 : 0)}</div></div>
+      <div class="val">${PCT(s(ab) ? s(venc) / s(ab) * 100 : 0)}</div>
+      ${creds.length ? `<div class="sub">🎟 ${BRL(creds.reduce((a, c) => a + N(c.saldo), 0))} em crédito de devolução</div>` : ''}</div>
   </div>
   <div class="card">
     <div class="tabs" style="margin:0;padding:0 13px">
@@ -3361,7 +3783,8 @@ ROTAS.receber = async (v, filtro) => {
       <td class="r money"><b>${BRL(x.saldo)}</b></td>
       <td class="c">${tagSituacao(x.situacao_real, x.dias_atraso)}</td>
       <td class="nw">${x.situacao === 'ABERTO' ? `<button class="btn btn-g btn-sm" data-rc="${x.id}" title="Receber">💰</button>
-          <button class="btn btn-s btn-sm" data-vc="${x.id}" title="Alterar vencimento">📅</button>` : ''}
+          <button class="btn btn-s btn-sm" data-vc="${x.id}" title="Alterar vencimento">📅</button>
+          ${temCredito(x) ? `<button class="btn btn-s btn-sm" data-cr="${x.id}" title="Usar crédito de devolução">🎟</button>` : ''}` : ''}
         ${x.devedor_whatsapp && /VENCIDO/.test(x.situacao_real)
           ? `<a class="btn btn-ghost btn-sm" target="_blank" title="Cobrar no WhatsApp"
              href="https://wa.me/55${x.devedor_whatsapp}?text=${encodeURIComponent(msgParcela(x))}">💬</a>` : ''}</td></tr>`).join('')
@@ -3373,6 +3796,8 @@ ROTAS.receber = async (v, filtro) => {
       formRecebimento(x.tipo_devedor, { id:x.cliente_id || x.revendedor_id, nome:x.devedor_nome }, [x]); });
     $$('[data-vc]').forEach(b => b.onclick = () => {
       formVencimento(tits.find(y => y.id === b.dataset.vc), () => navegar()); });
+    $$('[data-cr]').forEach(b => b.onclick = () => {
+      formUsarCredito(tits.find(y => y.id === b.dataset.cr)); });
     atualizarSel();
   };
   const atualizarSel = () => {
@@ -3778,11 +4203,47 @@ ROTAS.recebimentos = async (v) => {
   pintar();
 };
 
+/* Marcar a compra como paga, informando quando o dinheiro saiu. */
+async function formPagarCompra(c) {
+  const formas = S.formas || [];
+  const m = modal({ titulo:`Pagar compra nº ${c.numero}`,
+    corpo:`<div class="sumbox" style="margin-bottom:14px">
+        <div class="sumrow"><span class="l">Fornecedor</span><span>${esc(c.fornecedor_nome)}</span></div>
+        <div class="sumrow"><span class="l">Compra</span><span>${dBR(c.data_compra)}</span></div>
+        <div class="sumrow tot"><span class="l">Valor total</span><span class="money">${BRL(c.custo_total)}</span></div>
+      </div>
+      <div class="grid-f f2">
+        <div><label>Data do pagamento</label>
+          <input class="inp" type="date" id="pc_dt" value="${c.data_pagamento || hoje()}" min="${c.data_compra}"></div>
+        <div><label>Forma de pagamento</label><select class="inp" id="pc_fp">
+          <option value="">—</option>${selectOpts(formas)}</select></div>
+      </div>
+      <div class="hint" style="margin-top:10px">Isso não lança despesa: o custo da mercadoria
+        entra no resultado quando o produto é vendido. Serve para você acompanhar o caixa.</div>`,
+    rodape:`<button class="btn btn-s" data-x>Cancelar</button>
+            <button class="btn btn-p" data-ok>Marcar como paga</button>` });
+  $('[data-x]', m.foot).onclick = m.fechar;
+  $('[data-ok]', m.foot).onclick = async (ev) => {
+    const b = ev.target;
+    b.disabled = true; b.innerHTML = '<span class="spin"></span> Salvando…';
+    try {
+      await rpc('fn_marcar_compra_paga', { p_compra_id:c.id, p_data:$('#pc_dt', m.body).value || null,
+        p_forma_pagamento_id:$('#pc_fp', m.body).value || null });
+      m.fechar(); ok('Compra marcada como paga', 'Data registrada.'); navegar();
+    } catch (e) { bad('Não foi possível salvar', erroAmigavel(e));
+      b.disabled = false; b.textContent = 'Marcar como paga'; }
+  };
+}
+
 /* ── Despesas ── */
 ROTAS.despesas = async (v) => {
   crumb('Despesas');
-  const ds = await q(sb.from('despesas').select('*,produtos(nome),formas_pagamento(nome)').is('deleted_at', null).order('data_despesa', { ascending:false }));
-  const CAT = { PERDA_ESTOQUE:'Perda de estoque', BAIXA_MOSTRUARIO:'Baixa de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
+  const [ds, cps] = await Promise.all([
+    q(sb.from('despesas').select('*,produtos(nome),formas_pagamento(nome)').is('deleted_at', null).order('data_despesa', { ascending:false })),
+    q(sb.from('vw_compras_a_pagar').select('*').order('data_pagamento', { nullsFirst:false }))
+  ]);
+  const aPagar = cps.filter(c => !c.pago);
+  const CAT = { PERDA_ESTOQUE:'Perda de estoque', BAIXA_MOSTRUARIO:'Custo de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
     EMBALAGEM:'Embalagem', MARKETING:'Marketing', COMISSAO:'Comissão', OPERACIONAL:'Operacional', OUTRAS:'Outras' };
   const porCat = {}; ds.forEach(d => porCat[d.categoria] = (porCat[d.categoria] || 0) + N(d.valor));
 
@@ -3794,9 +4255,13 @@ ROTAS.despesas = async (v) => {
     <div class="kpi red"><div class="lab">Total de despesas</div><div class="val">${BRL(ds.reduce((a, d) => a + N(d.valor), 0))}</div></div>
     <div class="kpi"><div class="lab">Fixas</div><div class="val">${BRL(ds.filter(d => d.natureza === 'FIXA').reduce((a, d) => a + N(d.valor), 0))}</div></div>
     <div class="kpi"><div class="lab">Variáveis</div><div class="val">${BRL(ds.filter(d => d.natureza === 'VARIAVEL').reduce((a, d) => a + N(d.valor), 0))}</div></div>
-    <div class="kpi amber"><div class="lab">Perdas de estoque</div><div class="val">${BRL(porCat.PERDA_ESTOQUE || 0)}</div></div>
+    <div class="kpi amber"><div class="lab">Compras a pagar</div>
+      <div class="val">${BRL(aPagar.reduce((a, c) => a + N(c.custo_total), 0))}</div>
+      <div class="sub">${aPagar.length} compra(s) · fora do resultado</div></div>
   </div>
-  <div class="card"><div class="filters">
+  <div class="tabs"><button class="on" data-t="desp">📉 Despesas (${ds.length})</button>
+    <button data-t="comp">🧾 Compras a pagar (${cps.length})</button></div>
+  <div id="pn_desp"><div class="card"><div class="filters">
       <input class="inp grow" id="fq" placeholder="🔍 Buscar…">
       <select class="inp" id="fcat"><option value="">Todas as categorias</option>
         ${Object.entries(CAT).map(([k, x]) => `<option value="${k}">${x}</option>`).join('')}</select>
@@ -3804,7 +4269,60 @@ ROTAS.despesas = async (v) => {
     <div class="tw"><table class="dt"><thead><tr>
       <th>Nº</th><th>Data</th><th>Categoria</th><th>Descrição</th><th class="c">Natureza</th>
       <th class="r">Valor</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
-    <div class="pager"><span id="cnt"></span></div></div>`;
+    <div class="pager"><span id="cnt"></span></div></div></div>
+
+  <div id="pn_comp" style="display:none"><div class="alert info"><span>ℹ</span><div>
+    <b>Compra não é despesa.</b> A mercadoria vira estoque, e o custo dela entra no resultado
+    como CMV no dia em que o produto é vendido — frete e taxa de cartão já vão embutidos nesse
+    custo. Lançar a compra também aqui contaria o mesmo dinheiro duas vezes. Esta lista existe
+    para você <b>saber quando sai o dinheiro</b>, não para somar no lucro.</div></div>
+  <div class="card"><div class="filters">
+      <input class="inp grow" id="cq" placeholder="🔍 Buscar por fornecedor…">
+      <select class="inp" id="csit"><option value="">Pagas e a pagar</option>
+        <option value="ABERTO">Só a pagar</option><option value="PAGO">Só pagas</option>
+        <option value="VENCIDO">Só vencidas</option></select>
+      <input class="inp" type="date" id="cd1"><input class="inp" type="date" id="cd2"></div>
+    <div class="tw"><table class="dt"><thead><tr>
+      <th>Nº</th><th>Compra</th><th>Fornecedor</th><th>Vencimento</th><th class="c">Situação</th>
+      <th>Forma</th><th class="r">Valor</th><th></th></tr></thead><tbody id="ctb"></tbody></table></div>
+    <div class="pager"><span id="ccnt"></span></div></div></div>`;
+
+  $$('.tabs [data-t]').forEach(b => b.onclick = () => {
+    $$('.tabs [data-t]').forEach(x => x.classList.toggle('on', x === b));
+    $('#pn_desp').style.display = b.dataset.t === 'desp' ? '' : 'none';
+    $('#pn_comp').style.display = b.dataset.t === 'comp' ? '' : 'none';
+  });
+
+  const SIT = { PAGO:['g','Paga'], VENCIDO:['r','Vencida'], VENCE_EM_BREVE:['a','Vence em breve'],
+                A_VENCER:['b','A vencer'], SEM_DATA:['n','Sem data'] };
+  const pintarCompras = () => {
+    const t = $('#cq').value.trim().toLowerCase(), sit = $('#csit').value,
+          d1 = $('#cd1').value, d2 = $('#cd2').value;
+    const f = cps.filter(c => (!t || (c.fornecedor_nome || '').toLowerCase().includes(t))
+      && (!sit || (sit === 'ABERTO' ? !c.pago : c.situacao === sit))
+      && (!d1 || (c.data_pagamento || c.data_compra) >= d1)
+      && (!d2 || (c.data_pagamento || c.data_compra) <= d2));
+    $('#ccnt').textContent = `${f.length} compra(s) · ${BRL(f.reduce((a, c) => a + N(c.custo_total), 0))}`;
+    $('#ctb').innerHTML = f.length ? f.map(c => {
+      const sg = SIT[c.situacao] || SIT.SEM_DATA;
+      return `<tr>
+      <td class="num"><a href="#compras/${c.id}"><b>${c.numero}</b></a></td>
+      <td class="nw">${dBR(c.data_compra)}</td>
+      <td>${esc(c.fornecedor_nome)}</td>
+      <td class="nw">${c.data_pagamento ? dBR(c.data_pagamento) : '—'}
+        ${!c.pago && c.dias_para_pagar != null ? `<span style="display:block;font-size:11px;color:var(--mute)">${
+          c.dias_para_pagar < 0 ? Math.abs(c.dias_para_pagar) + ' dias em atraso'
+          : c.dias_para_pagar === 0 ? 'vence hoje' : 'em ' + c.dias_para_pagar + ' dias'}</span>` : ''}</td>
+      <td class="c"><span class="tag ${sg[0]}">${sg[1]}</span></td>
+      <td>${esc(c.forma_pagamento || '—')}</td>
+      <td class="r money"><b>${BRL(c.custo_total)}</b></td>
+      <td>${!c.pago ? `<button class="btn btn-g btn-sm" data-pg="${c.id}">✓ Marcar paga</button>` : ''}</td></tr>`;
+    }).join('') : `<tr><td colspan="8">${vazio('🧾','Nenhuma compra','Compras confirmadas aparecem aqui com a data de pagamento.')}</td></tr>`;
+    $$('[data-pg]').forEach(b => b.onclick = () => formPagarCompra(cps.find(x => x.id === b.dataset.pg)));
+  };
+  ['#cq','#csit','#cd1','#cd2'].forEach(x => $(x).addEventListener('input', pintarCompras));
+  pintarCompras();
+
   const pintar = () => {
     const t = $('#fq').value.trim().toLowerCase(), c = $('#fcat').value, d1 = $('#fd1').value, d2 = $('#fd2').value;
     const f = ds.filter(d => (!t || d.descricao.toLowerCase().includes(t)) && (!c || d.categoria === c) &&
@@ -3911,7 +4429,7 @@ ROTAS.financeiro = async (v) => {
     ]);
     const d = Array.isArray(dreArr) ? dreArr[0] : dreArr;
     ultimoDre = { d, i, f };
-    const CAT = { PERDA_ESTOQUE:'Perdas de estoque', BAIXA_MOSTRUARIO:'Baixa de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxas de pagamento',
+    const CAT = { PERDA_ESTOQUE:'Perdas de estoque', BAIXA_MOSTRUARIO:'Custo de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxas de pagamento',
       EMBALAGEM:'Embalagem', MARKETING:'Marketing', COMISSAO:'Comissões', OPERACIONAL:'Operacional', OUTRAS:'Outras' };
     const porCat = {}; desp.forEach(x => porCat[x.categoria] = (porCat[x.categoria] || 0) + N(x.valor));
     const confere = Math.abs(N(d.lucro_recebido) + N(d.lucro_a_receber) - N(d.lucro_bruto)) < 0.05;
@@ -4027,6 +4545,9 @@ const RELATORIOS = [
   { id:'parados', g:'Produtos', t:'Produtos parados', d:'Capital imobilizado sem giro' },
   { id:'clientes', g:'Pessoas', t:'Clientes', d:'Cadastro, histórico e saldo devedor' },
   { id:'revendedores', g:'Pessoas', t:'Revendedores', d:'Extrato consolidado de cada revendedor' },
+  { id:'rev-geral', g:'Revendedores', t:'Produtos do revendedor', d:'Tudo que ele já pegou, com a situação de cada peça' },
+  { id:'rev-pagos', g:'Revendedores', t:'Produtos pagos', d:'O que o revendedor já quitou, peça a peça' },
+  { id:'rev-pagar', g:'Revendedores', t:'Produtos a pagar', d:'O que o revendedor ainda deve, peça a peça' },
   { id:'vendas', g:'Vendas', t:'Vendas', d:'Receita, custo, lucro e margem por venda' },
   { id:'vendas-produto', g:'Vendas', t:'Vendas por produto', d:'Ranking de produtos com lucro' },
   { id:'lucratividade', g:'Vendas', t:'Lucratividade por produto', d:'Participação de cada produto no lucro' },
@@ -4197,6 +4718,40 @@ async function montarRelatorio(id, i, f) {
         { t:'Vencido', v:x => N(x.saldo_vencido), a:'r', m:1, h:x => N(x.saldo_vencido) ? `<b class="neg">${BRL(x.saldo_vencido)}</b>` : '—' }],
         totais:`Em posse ${BRL(sm(l, 'valor_custo_em_posse'))} · em aberto ${BRL(sm(l, 'saldo_aberto'))}` };
     }
+    /* Os três relatórios do revendedor são a mesma view com um filtro
+       diferente: cada linha é uma situação (pago, a pagar, devolvido, em
+       posse, amostra), com preço unitário e total. */
+    case 'rev-geral': case 'rev-pagos': case 'rev-pagar': {
+      let cs = sb.from('vw_itens_revendedor').select('*').gte('data', i).lte('data', f);
+      if (id === 'rev-pagos')  cs = cs.eq('situacao', 'PAGO');
+      if (id === 'rev-pagar')  cs = cs.eq('situacao', 'A_PAGAR');
+      const l = await q(cs.order('revendedor_nome').order('data').order('produto_nome'));
+      const geral = id === 'rev-geral';
+      const TAG = { PAGO:'g', A_PAGAR:'a', DEVOLVIDO:'b', PERDIDO:'r', EM_POSSE:'n', AMOSTRA:'n', AMOSTRA_FINALIZADA:'n' };
+      const cols = [
+        { t:'Revendedor', v:x => x.revendedor_nome },
+        { t:'Origem', v:x => x.documento },
+        { t:'Data', v:x => dBR(x.data) },
+        { t:'Código', v:x => x.produto_codigo },
+        { t:'Produto', v:x => x.produto_nome + (x.produto_tamanho ? ' · ' + x.produto_tamanho : '') }];
+      if (geral) cols.push({ t:'Situação', v:x => x.situacao_label, a:'c',
+        h:x => `<span class="tag ${TAG[x.situacao] || 'n'}">${esc(x.situacao_label)}</span>` });
+      cols.push(
+        { t:'Qtd', v:x => N(x.quantidade), a:'c', h:x => QTD(x.quantidade) },
+        { t:'Preço unit.', v:x => N(x.valor_unitario), a:'r', m:1, h:x => BRL(x.valor_unitario) },
+        { t:'Total', v:x => N(x.valor_total), a:'r', m:1, h:x => `<b>${BRL(x.valor_total)}</b>` });
+
+      const som = (sit) => l.filter(x => x.situacao === sit).reduce((a, x) => a + N(x.valor_total), 0);
+      const qsom = (sit) => l.filter(x => x.situacao === sit).reduce((a, x) => a + N(x.quantidade), 0);
+      const totais = geral
+        ? `Pago <b class="pos">${BRL(som('PAGO'))}</b> · a pagar <b class="neg">${BRL(som('A_PAGAR'))}</b> ·
+           devolvido ${BRL(som('DEVOLVIDO'))} · em posse ${BRL(som('EM_POSSE'))} ·
+           mostruário ${BRL(som('AMOSTRA'))} <span style="color:var(--mute)">(amostra não se cobra)</span>`
+        : id === 'rev-pagos'
+          ? `${QTD(qsom('PAGO'))} peça(s) · <b class="pos">${BRL(som('PAGO'))}</b> recebidos`
+          : `${QTD(qsom('A_PAGAR'))} peça(s) · <b class="neg">${BRL(som('A_PAGAR'))}</b> a receber`;
+      return { linhas:l, colunas:cols, totais };
+    }
     case 'vendas': {
       const l = await q(sb.from('vw_resultado_consolidado').select('*').gte('data_venda', i).lte('data_venda', f).order('data_venda', { ascending:false }));
       return { linhas:l, colunas:[
@@ -4282,7 +4837,7 @@ async function montarRelatorio(id, i, f) {
     }
     case 'despesas': {
       const l = await q(sb.from('despesas').select('*').is('deleted_at', null).gte('data_despesa', i).lte('data_despesa', f).order('data_despesa', { ascending:false }));
-      const CAT = { PERDA_ESTOQUE:'Perda de estoque', BAIXA_MOSTRUARIO:'Baixa de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
+      const CAT = { PERDA_ESTOQUE:'Perda de estoque', BAIXA_MOSTRUARIO:'Custo de mostruário', FRETE_ENVIO:'Frete de envio', TAXA_PAGAMENTO:'Taxa de pagamento',
         EMBALAGEM:'Embalagem', MARKETING:'Marketing', COMISSAO:'Comissão', OPERACIONAL:'Operacional', OUTRAS:'Outras' };
       return { linhas:l, colunas:[
         { t:'Nº', v:x => x.numero }, { t:'Data', v:x => dBR(x.data_despesa) },
@@ -4694,7 +5249,9 @@ async function imprimirPrestacao(id) {
         rem:ri.remessas?.numero, data:ri.remessas?.data_envio, qtd:N(ri.quantidade),
         cu:N(ri.valor_custo_unitario), vr:N(ri.valor_revenda_unitario) }; });
     const rec = Object.values(recebidos);
-    const qtdBaixada = g('BAIXADO').reduce((a, e) => a + N(e.quantidade), 0);
+    /* 'BAIXADO' é o nome antigo do mesmo evento, anterior à migração 0030. */
+    const finalizados = [...g('FINALIZADO'), ...g('BAIXADO')];
+    const qtdBaixada = finalizados.reduce((a, e) => a + N(e.quantidade), 0);
 
     let _sn = 0;
     const sec = (t) => `<h4>${++_sn} · ${esc(t)}</h4>`;
@@ -4735,7 +5292,7 @@ async function imprimirPrestacao(id) {
       ${bloco('Produtos vendidos', g('VENDIDO'), true)}
       ${bloco('Produtos devolvidos', g('DEVOLVIDO'), false)}
       ${bloco('Produtos perdidos ou danificados', g('PERDIDO'), false)}
-      ${bloco('Amostras de mostruário baixadas — sem cobrança', g('BAIXADO'), false)}
+      ${bloco('Amostras de mostruário finalizadas — sem cobrança', finalizados, false)}
 
       ${emPosse.length ? `${sec('Produtos que continuam em posse')}
       <table><thead><tr><th>Produto</th><th class="c" style="width:18mm">Qtd</th>
@@ -4749,7 +5306,7 @@ async function imprimirPrestacao(id) {
       <div class="grid2" style="margin-bottom:3mm">
         <div class="caixa"><div class="k">Vendidos</div><div class="v">${QTD(pc.qtd_vendida)} un</div></div>
         <div class="caixa"><div class="k">Devolvidos</div><div class="v">${QTD(pc.qtd_devolvida)} un</div></div>
-        ${qtdBaixada ? `<div class="caixa"><div class="k">Baixados</div><div class="v">${QTD(qtdBaixada)} un</div></div>` : ''}
+        ${qtdBaixada ? `<div class="caixa"><div class="k">Finalizados</div><div class="v">${QTD(qtdBaixada)} un</div></div>` : ''}
         <div class="caixa"><div class="k">Perdidos</div><div class="v">${QTD(pc.qtd_perdida)} un</div></div>
         <div class="caixa"><div class="k">Em posse</div><div class="v">${QTD(emPosse.reduce((a, x) => a + N(x.qtd_em_posse), 0))} un</div></div>
       </div>
@@ -4759,7 +5316,7 @@ async function imprimirPrestacao(id) {
         <div class="l big"><span>TOTAL DESTE ACERTO</span><span>${BRLn(pc.valor_devido)}</span></div>
       </div>
       ${(!pc.cobrar_perdas && N(pc.valor_perdas)) || qtdBaixada ? `<div class="aviso" style="background:#f6f8f4;border-left-color:#7a9a5b;color:#3f5230">
-        ${qtdBaixada ? `<b>${QTD(qtdBaixada)} amostra(s) de mostruário baixada(s)</b> — sem cobrança: o custo fica com a empresa.` : ''}
+        ${qtdBaixada ? `<b>${QTD(qtdBaixada)} amostra(s) de mostruário finalizada(s)</b> — sem cobrança: o custo fica com a empresa.` : ''}
         ${!pc.cobrar_perdas && N(pc.valor_perdas) ? `${qtdBaixada ? '<br>' : ''}<b>Perdas não cobradas</b> — absorvidas pela empresa.` : ''}
       </div>` : ''}
 
@@ -4890,6 +5447,55 @@ function docPosse(r, posse) {
 }
 
 /* ── Extrato do revendedor ── */
+/* Relatório geral do revendedor: tudo o que ele já pegou, com a situação de
+   cada peça. Documento de via dele — por isso mostra só preço de revenda,
+   nunca custo de aquisição. */
+function docItensRevendedor(r, itens) {
+  const soma = (sit) => itens.filter(x => x.situacao === sit);
+  const vl = (l) => l.reduce((a, x) => a + N(x.valor_total), 0);
+  const qt = (l) => l.reduce((a, x) => a + N(x.quantidade), 0);
+  const pago = soma('PAGO'), aPagar = soma('A_PAGAR'), devolvido = soma('DEVOLVIDO');
+  const emPosse = soma('EM_POSSE'), amostra = [...soma('AMOSTRA'), ...soma('AMOSTRA_FINALIZADA')];
+  const perdido = soma('PERDIDO');
+
+  const bloco = (titulo, lista, mostrarValor) => lista.length ? `
+    <h4>${esc(titulo)}</h4>
+    <table><thead><tr><th style="width:26mm">Origem</th><th style="width:20mm">Data</th>
+      <th>Produto</th><th class="c" style="width:14mm">Qtd</th>
+      ${mostrarValor ? '<th class="r" style="width:24mm">Preço un.</th><th class="r" style="width:26mm">Total</th>' : ''}
+      </tr></thead><tbody>
+      ${lista.map(x => `<tr>
+        <td>${esc(x.documento)}</td><td>${dBR(x.data)}</td>
+        <td class="prod"><b>${esc(x.produto_nome)}</b><span>${esc(x.produto_codigo)}</span></td>
+        <td class="c">${QTD(x.quantidade)}</td>
+        ${mostrarValor ? `<td class="r">${BRLn(x.valor_unitario)}</td><td class="r">${BRLn(x.valor_total)}</td>` : ''}
+        </tr>`).join('')}
+      <tr class="sub"><td colspan="3">Subtotal</td><td class="c">${QTD(qt(lista))} un</td>
+        ${mostrarValor ? `<td></td><td class="r">${BRLn(vl(lista))}</td>` : ''}</tr>
+    </tbody></table>` : '';
+
+  return `<div class="doc">
+    ${cabecalho('Relatório de produtos do revendedor', null, dBR(hoje()))}
+    <h4>Revendedor</h4>
+    ${blocoPessoa(r, 'Revendedor')}
+    ${bloco('Produtos pagos', pago, true)}
+    ${bloco('Produtos a pagar', aPagar, true)}
+    ${bloco('Produtos devolvidos', devolvido, true)}
+    ${bloco('Produtos ainda em posse — consignação', emPosse, true)}
+    ${bloco('Amostras de mostruário — sem cobrança', amostra, false)}
+    ${bloco('Produtos perdidos', perdido, true)}
+    <div class="tot">
+      <div class="l"><span>Já pago</span><span>${BRLn(vl(pago))}</span></div>
+      ${devolvido.length ? `<div class="l"><span>Devolvido</span><span>${BRLn(vl(devolvido))}</span></div>` : ''}
+      ${emPosse.length ? `<div class="l"><span>Em posse (ainda não vendido)</span><span>${BRLn(vl(emPosse))}</span></div>` : ''}
+      <div class="l big"><span>TOTAL A PAGAR</span><span>${BRLn(vl(aPagar))}</span></div>
+    </div>
+    ${amostra.length ? `<div class="aviso" style="background:#f6f8f4;border-left-color:#7a9a5b;color:#3f5230">
+      As ${QTD(qt(amostra))} amostra(s) de mostruário <b>não são cobradas</b>: o custo delas é da empresa.</div>` : ''}
+    ${assinaturas(S.params.empresa_nome || 'ESSENZA AURA', r.nome)}
+    ${rodape()}</div>`;
+}
+
 function docExtrato(r, mov, saldo) {
   return `<div class="doc">
     ${cabecalho('Extrato do revendedor', null, dBR(hoje()))}
