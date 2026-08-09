@@ -419,7 +419,13 @@ async function atualizarBadges() {
   } catch (e) {}
 }
 
+/* Carimbo de versão do arquivo. Trocado pelo scripts/build.sh a cada geração:
+   é o que permite dizer, olhando a tela, se a cópia aberta é a mais nova. */
+const VERSAO = '__VERSAO__';
+
 async function iniciar() {
+  const el = document.getElementById('sbVer');
+  if (el) el.textContent = 'versão ' + VERSAO;
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { $('#login').style.display = 'grid'; $('#app').classList.remove('on'); return; }
   S.user = session.user;

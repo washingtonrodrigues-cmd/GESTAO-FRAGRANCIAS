@@ -92,6 +92,8 @@ textarea.inp{resize:vertical;min-height:64px}
 .sb-nav a .bdg{margin-left:auto;background:var(--red);color:#fff;font-size:10.5px;font-weight:700;
   padding:1px 6px;border-radius:9px;font-family:var(--mono)}
 .sb-foot{border-top:1px solid var(--line);padding:11px 14px;display:flex;align-items:center;gap:10px}
+.sb-ver{padding:0 15px 11px;font-size:10.5px;letter-spacing:.04em;color:#6b6357;
+  text-align:center;font-variant-numeric:tabular-nums}
 .avatar{width:30px;height:30px;border-radius:50%;background:var(--brand-100);color:var(--brand);
   display:grid;place-items:center;font-weight:700;font-size:12px;flex:0 0 auto}
 .sb-foot .u{flex:1;min-width:0}
@@ -407,6 +409,9 @@ table.dt .nw{white-space:nowrap}
       <div class="u"><b id="unome">—</b><span id="uperfil">—</span></div>
       <button class="btn btn-ghost btn-sm" id="sairBtn" title="Sair">⏻</button>
     </div>
+    <!-- Carimbo de versão: serve para saber, olhando, se o arquivo aberto é
+         o mais recente. Sem isso não dá para distinguir uma cópia antiga. -->
+    <div class="sb-ver" id="sbVer" title="Versão do arquivo aberto"></div>
   </aside>
 
   <div class="main">

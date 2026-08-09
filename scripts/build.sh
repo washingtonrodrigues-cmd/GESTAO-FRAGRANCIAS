@@ -18,7 +18,16 @@ for f in "${PARTES[@]}"; do
 done
 
 cat "${PARTES[@]}" > GESTAO-FRAGRANCIAS.html
-echo "✓ GESTAO-FRAGRANCIAS.html gerado ($(wc -c < GESTAO-FRAGRANCIAS.html) bytes)"
+
+# Carimbo de versão. Sem isso não dá para saber, olhando a tela, se a cópia
+# aberta é a mais nova — e cópia velha aberta por engano já custou caro.
+VERSAO="$(date +%Y.%m.%d).$(date +%H%M)"
+if command -v perl >/dev/null 2>&1; then
+  perl -pi -e "s/__VERSAO__/$VERSAO/g" GESTAO-FRAGRANCIAS.html
+else
+  sed -i.bak "s/__VERSAO__/$VERSAO/g" GESTAO-FRAGRANCIAS.html && rm -f GESTAO-FRAGRANCIAS.html.bak
+fi
+echo "✓ GESTAO-FRAGRANCIAS.html gerado ($(wc -c < GESTAO-FRAGRANCIAS.html) bytes) · versão $VERSAO"
 
 # public/index.html é o que a Vercel publica. Mesmo arquivo, outro nome:
 # na web o navegador procura index.html; no computador o nome descritivo ajuda.
