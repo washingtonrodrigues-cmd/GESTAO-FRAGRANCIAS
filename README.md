@@ -94,6 +94,7 @@ inicial:
 | `0025`–`0028` | recebimento do revendedor por produto e quantidade, não só por valor |
 | `0029`–`0030` | o custo do mostruário vira despesa no envio, uma vez só; devolução estorna |
 | `0031`–`0034` | devolução de produto vendido, crédito por devolução, relatórios do revendedor, edição de itens da compra e data de pagamento da compra |
+| `0035` | compra e venda editáveis depois de salvas, com estorno explícito do recebimento |
 
 ### Decisões de modelagem
 
@@ -184,6 +185,26 @@ com abas por situação e o botão de dar baixa. Compra vencida acende o aviso n
 Ela **não é despesa**: a mercadoria vira estoque e o custo entra no resultado como CMV quando o
 produto é vendido — frete e taxa de cartão já vão embutidos nesse custo. Por isso a tela vive fora
 de Despesas e não soma no lucro; serve para saber quando sai o dinheiro.
+
+### Alterar compra e venda depois de salvas
+
+Documento confirmado não é alterado no lugar: o banco **desfaz o que ele produziu, volta para
+rascunho, regrava e confirma de novo** pelo caminho normal. Estoque, custo médio, títulos e quitação
+automática passam pelas mesmas funções já testadas — nada é recalculado à mão.
+
+Duas consequências que a tela avisa antes de salvar:
+
+- **O CMV da venda é recalculado** pelo custo médio do momento da alteração, porque a mercadoria
+  voltou ao estoque e saiu de novo.
+- **O custo unitário de todos os itens da compra muda**, porque o rateio de frete e taxa é refeito.
+
+**Venda com recebimento** exige estorno. A tela lista quais recebimentos serão estornados — por
+inteiro, inclusive a parte que pagou outra venda — e só prossegue com confirmação. Venda com
+**devolução registrada** não pode ser alterada: apagaria o histórico da devolução e o crédito que
+ela gerou.
+
+Parcela cancelada deixa de reservar o número: o índice único passou a valer só para parcela não
+cancelada, senão a nova parcela 1 colidiria com a antiga.
 
 ### O que o revendedor vê
 

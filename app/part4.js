@@ -284,7 +284,7 @@ async function fichaCompra(v, id) {
   <div class="page-head"><h1>Compra nº ${c.numero} <span class="tag ${badge[0]}">${badge[1]}</span>
     <small>${dBR(c.data_compra)} · ${esc(c.fornecedores?.nome || '—')}${c.numero_documento ? ' · doc ' + esc(c.numero_documento) : ''}</small></h1>
     <div class="acts"><a class="btn btn-s btn-sm" href="#compras">← Voltar</a>
-      ${c.status !== 'CANCELADO' ? '<button class="btn btn-p btn-sm" id="edItens">✎ Produtos da compra</button>' : ''}
+      ${c.status !== 'CANCELADO' ? '<button class="btn btn-p btn-sm" id="edItens">✎ Alterar compra</button>' : ''}
       ${c.status === 'CONFIRMADO' && !c.pago ? '<button class="btn btn-g btn-sm" id="pagBtn">✓ Marcar paga</button>' : ''}
       ${c.status === 'CONFIRMADO' ? '<button class="btn btn-d btn-sm" id="canBtn">Cancelar compra</button>' : ''}</div></div>
   ${c.status === 'CANCELADO' ? `<div class="alert bad"><span>⛔</span><div><b>Compra cancelada</b> em ${dBR(c.data_cancelamento)}.<br>Motivo: ${esc(c.motivo_cancelamento || '')}</div></div>` : ''}
@@ -330,7 +330,7 @@ async function fichaCompra(v, id) {
     <p style="margin-top:6px">${esc(c.observacoes)}</p></div></div>` : ''}`;
 
   $('#prBtn').onclick = () => imprimir(docCompra(c));
-  const eb = $('#edItens'); if (eb) eb.onclick = () => formItensCompra(c);
+  const eb = $('#edItens'); if (eb) eb.onclick = () => formEditarCompra(c);
   const pb = $('#pagBtn'); if (pb) pb.onclick = () => formPagarCompra({
     id:c.id, numero:c.numero, data_compra:c.data_compra, data_pagamento:c.data_pagamento,
     custo_total:c.custo_total, fornecedor_nome:c.fornecedores?.nome });
@@ -349,17 +349,32 @@ async function fichaCompra(v, id) {
 /* Incluir e excluir produto de uma compra, inclusive já confirmada.
    O banco desfaz a entrada de estoque, refaz o rateio de frete e taxa e dá
    entrada de novo — por isso o custo unitário de TODOS os itens muda. */
-function formItensCompra(c) {
+function formEditarCompra(c) {
   const itens = c.compra_itens.map(i => ({ produto_id:i.produto_id, nome:i.produtos?.nome,
     codigo:i.produtos?.codigo, qtd:String(N(i.quantidade)), vu:String(N(i.valor_unitario)) }));
   const confirmada = c.status === 'CONFIRMADO';
 
-  const m = modal({ titulo:`Produtos da compra nº ${c.numero}`, largura:'wide',
+  const m = modal({ titulo:`Alterar compra nº ${c.numero}`, largura:'wide',
     corpo:`${confirmada ? `<div class="alert warn"><span>⚠</span><div>Esta compra <b>já está confirmada</b>.
       Ao salvar, o sistema tira do estoque tudo o que esta compra tinha colocado, refaz o rateio de
       frete e taxa e dá entrada de novo — então o <b>custo unitário de todos os produtos da nota muda</b>.
       Se alguma unidade desta compra já foi vendida, a alteração é recusada.</div></div>`
       : '<div class="alert info"><span>ℹ</span><div>Compra em rascunho: pode mexer à vontade.</div></div>'}
+      <div class="grid-f f2" style="margin-bottom:14px">
+        <div style="position:relative"><label>Fornecedor</label>
+          <input class="inp" id="ec_forn" autocomplete="off" value="${esc(c.fornecedores?.nome || '')}">
+          <input type="hidden" id="ec_forn_id" value="${esc(c.fornecedor_id)}"></div>
+        <div><label>Data da compra</label>
+          <input class="inp" type="date" id="ec_data" value="${c.data_compra}" max="${hoje()}"></div>
+      </div>
+      <div class="grid-f f2" style="margin-bottom:16px">
+        <div><label>Nº do documento / nota</label>
+          <input class="inp" id="ec_doc" value="${esc(c.numero_documento || '')}"></div>
+        <div><label>Critério de rateio</label><select class="inp" id="ec_crit">
+          <option value="VALOR"${c.criterio_rateio === 'VALOR' ? ' selected' : ''}>Proporcional ao valor</option>
+          <option value="QUANTIDADE"${c.criterio_rateio === 'QUANTIDADE' ? ' selected' : ''}>Proporcional à quantidade</option>
+          </select></div>
+      </div>
       <div class="tw"><table class="itens-tb" id="ectb"><thead><tr>
         <th style="width:40%">Produto</th><th style="width:16%">Quantidade</th>
         <th style="width:20%">Valor unitário</th><th style="width:18%" class="r">Subtotal</th>
@@ -370,14 +385,23 @@ function formItensCompra(c) {
         <div><label>Taxa do cartão</label><input class="inp num" type="number" step="0.01" min="0" id="ec_taxa" value="${N(c.valor_taxa_cartao).toFixed(2)}"></div>
         <div><label>Outros custos</label><input class="inp num" type="number" step="0.01" min="0" id="ec_outros" value="${N(c.outros_custos).toFixed(2)}"></div>
       </div>
+      <div class="grid-f f3" style="margin-top:14px">
+        <div><label>Data do pagamento</label>
+          <input class="inp" type="date" id="ec_dtpag" value="${c.data_pagamento || ''}"></div>
+        <div><label>Forma de pagamento</label><select class="inp" id="ec_fpag">
+          <option value="">—</option>${selectOpts(S.formas, c.forma_pagamento_id)}</select></div>
+        <div style="display:flex;align-items:flex-end;padding-bottom:9px">
+          <label class="chk" style="margin:0"><input type="checkbox" id="ec_pago"${c.pago ? ' checked' : ''}> Já está paga</label></div>
+      </div>
       <div id="ec_resumo" style="margin-top:16px"></div>`,
     rodape:`<button class="btn btn-s" data-x>Cancelar</button>
-            <button class="btn btn-p" data-ok>Salvar produtos</button>` });
+            <button class="btn btn-p" data-ok>Salvar alterações</button>` });
 
   const resumo = () => {
     const sub = itens.reduce((a, i) => a + N(i.qtd) * N(i.vu), 0);
     const ace = N($('#ec_frete', m.body).value) + N($('#ec_taxa', m.body).value) + N($('#ec_outros', m.body).value);
-    const base = c.criterio_rateio === 'QUANTIDADE' ? itens.reduce((a, i) => a + N(i.qtd), 0) : sub;
+    const crit = $('#ec_crit', m.body)?.value || c.criterio_rateio;
+    const base = crit === 'QUANTIDADE' ? itens.reduce((a, i) => a + N(i.qtd), 0) : sub;
     $('#ec_resumo', m.body).innerHTML = `<div class="sumbox">
       <div class="sumrow"><span class="l">Produtos</span><span class="money">${BRL(sub)}</span></div>
       <div class="sumrow"><span class="l">Frete, taxa e outros</span><span class="money">${BRL(ace)}</span></div>
@@ -385,12 +409,12 @@ function formItensCompra(c) {
     </div>
     ${itens.length && base > 0 ? `<div class="tw" style="margin-top:12px"><table class="dt"><thead><tr>
       <th>Produto</th><th class="r">Rateio</th><th class="r">Custo unitário final</th></tr></thead><tbody>
-      ${itens.map(i => { const peso = c.criterio_rateio === 'QUANTIDADE' ? N(i.qtd) : N(i.qtd) * N(i.vu);
+      ${itens.map(i => { const peso = crit === 'QUANTIDADE' ? N(i.qtd) : N(i.qtd) * N(i.vu);
         const rat = ace * (peso / base);
         return `<tr><td>${esc(i.nome || '—')}</td><td class="r money" style="color:var(--amber)">${BRL(rat)}</td>
           <td class="r money"><b>${BRL(N(i.qtd) ? (N(i.qtd) * N(i.vu) + rat) / N(i.qtd) : 0)}</b></td></tr>`;
       }).join('')}</tbody></table></div>
-      <div class="hint">Prévia do rateio por ${c.criterio_rateio === 'QUANTIDADE' ? 'quantidade' : 'valor'}.
+      <div class="hint">Prévia do rateio por ${crit === 'QUANTIDADE' ? 'quantidade' : 'valor'}.
         O valor definitivo é calculado pelo banco ao salvar.</div>` : ''}`;
     $('[data-ok]', m.foot).disabled = !itens.length;
   };
@@ -421,12 +445,19 @@ function formItensCompra(c) {
 
   $('#ecAdd', m.body).onclick = () => { itens.push({ qtd:'', vu:'' }); render();
     setTimeout(() => { const l = $$('#ectb tbody .p-busca', m.body).pop(); if (l) l.focus(); }, 40); };
-  ['#ec_frete','#ec_taxa','#ec_outros'].forEach(x => $(x, m.body).addEventListener('input', resumo));
+  autocomplete($('#ec_forn', m.body), buscaFornecedor,
+    (fo) => { $('#ec_forn', m.body).value = fo.nome; $('#ec_forn_id', m.body).value = fo.id; }, fmtPessoa);
+  $('#ec_forn', m.body).addEventListener('input', () => {
+    if (!$('#ec_forn', m.body).value.trim()) $('#ec_forn_id', m.body).value = ''; });
+  ['#ec_frete','#ec_taxa','#ec_outros','#ec_crit'].forEach(x => $(x, m.body).addEventListener('input', resumo));
+  $('#ec_crit', m.body).addEventListener('change', resumo);
   $('[data-x]', m.foot).onclick = m.fechar;
 
   $('[data-ok]', m.foot).onclick = async (ev) => {
     const b = ev.target;
     if (!itens.length) return bad('Sem produtos', 'A compra precisa de ao menos um produto.');
+    if (!$('#ec_forn_id', m.body).value) return bad('Fornecedor não selecionado',
+      'Digite o nome e clique no fornecedor na lista que aparece.');
     for (const i of itens) {
       if (!i.produto_id) return bad('Produto não selecionado',
         'Em cada linha, digite o nome e clique no produto na lista que aparece.');
@@ -434,15 +465,23 @@ function formItensCompra(c) {
     }
     b.disabled = true; b.innerHTML = '<span class="spin"></span> Salvando…';
     try {
-      await rpc('fn_editar_itens_compra', { p_compra_id:c.id,
-        p_itens: itens.map(i => ({ produto_id:i.produto_id, quantidade:N(i.qtd), valor_unitario:N(i.vu) })),
-        p_valor_frete: N($('#ec_frete', m.body).value),
-        p_valor_taxa: N($('#ec_taxa', m.body).value),
-        p_outros_custos: N($('#ec_outros', m.body).value) });
-      m.fechar(); ok('Produtos atualizados', 'Estoque, rateio e custo médio recalculados.');
+      await rpc('fn_editar_compra', { p_compra_id:c.id,
+        p_dados: {
+          fornecedor_id: $('#ec_forn_id', m.body).value || c.fornecedor_id,
+          data_compra: $('#ec_data', m.body).value || c.data_compra,
+          numero_documento: $('#ec_doc', m.body).value.trim() || null,
+          criterio_rateio: $('#ec_crit', m.body).value,
+          valor_frete: N($('#ec_frete', m.body).value),
+          valor_taxa_cartao: N($('#ec_taxa', m.body).value),
+          outros_custos: N($('#ec_outros', m.body).value),
+          data_pagamento: $('#ec_dtpag', m.body).value || null,
+          pago: $('#ec_pago', m.body).checked,
+          forma_pagamento_id: $('#ec_fpag', m.body).value || null },
+        p_itens: itens.map(i => ({ produto_id:i.produto_id, quantidade:N(i.qtd), valor_unitario:N(i.vu) })) });
+      m.fechar(); ok('Compra alterada', 'Estoque, rateio e custo médio recalculados.');
       navegar();
     } catch (e) { bad('Não foi possível salvar', erroAmigavel(e));
-      b.disabled = false; b.textContent = 'Salvar produtos'; }
+      b.disabled = false; b.textContent = 'Salvar alterações'; }
   };
   render();
 }

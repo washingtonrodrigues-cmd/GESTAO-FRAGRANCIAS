@@ -941,6 +941,88 @@ const DRE = [{ receita_bruta:2970, descontos:0, receita_liquida:2970, cmv:1482, 
     await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
   }
 
+  P('\n── Alterar venda já salva ──');
+  await page.evaluate(id => location.hash = '#vendas/' + id, VID);
+  await page.waitForTimeout(1500);
+  const temEd = await page.evaluate(() => !!document.querySelector('a[href$="/editar"]'));
+  if (temEd) P('  ✓ botão Alterar na ficha da venda');
+  else { P('  ✗ falta o botão Alterar'); falhas++; }
+  await page.evaluate(id => location.hash = '#vendas/' + id + '/editar', VID);
+  await page.waitForTimeout(1800);
+  const fe = await page.evaluate(() => ({
+    titulo: (document.querySelector('.page-head h1')?.textContent || '').replace(/\s+/g,' ').trim(),
+    aviso: (document.querySelector('.alert.warn')?.textContent || '').replace(/\s+/g,' '),
+    linhas: document.querySelectorAll('#itb tbody tr').length,
+    comprador: document.querySelector('#v_comp')?.value,
+    data: document.querySelector('#v_data')?.value,
+    parc: document.querySelector('#v_parc')?.value,
+    qtd: document.querySelector('#itb tbody .q')?.value,
+    preco: document.querySelector('#itb tbody .pr')?.value,
+    botao: document.querySelector('#confirmar')?.textContent }));
+  P('  ' + JSON.stringify(fe).slice(0, 300));
+  for (const [rot, ok2] of [
+    ['abre em modo alteração', /Alterar venda/.test(fe.titulo)],
+    ['avisa que estoque e parcelas serão refeitos', /devolve os produtos ao estoque/i.test(fe.aviso)],
+    ['carrega o item da venda', fe.linhas === 1],
+    ['preenche o comprador', fe.comprador === 'Maria Silva Santos'],
+    ['preenche a data', fe.data === '2026-07-10'],
+    ['preenche a quantidade', String(fe.qtd) === '5'],
+    ['botão diz Salvar alterações', /Salvar alterações/.test(fe.botao || '')]
+  ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+
+  {
+    const ch = await page.evaluate(async () => {
+      let cap = null; const orig = window.rpc, oc = window.confirmar;
+      window.confirmar = async () => true;
+      window.rpc = async (fn, args) => { cap = { fn, args }; throw new Error('parar'); };
+      const tr = document.querySelector('#itb tbody tr');
+      const q2 = tr.querySelector('.q'); q2.value = '3'; q2.dispatchEvent(new Event('input'));
+      await new Promise(r => setTimeout(r, 300));
+      document.querySelector('#confirmar').click();
+      await new Promise(r => setTimeout(r, 900));
+      window.rpc = orig; window.confirmar = oc; return cap;
+    });
+    P('  RPC: ' + JSON.stringify(ch).slice(0, 300));
+    const it = ch?.args?.p_itens?.[0];
+    for (const [rot, ok2] of [
+      ['chama fn_editar_venda', ch?.fn === 'fn_editar_venda'],
+      ['manda a quantidade alterada', Number(it?.quantidade) === 3],
+      ['autoriza o estorno do recebimento', ch?.args?.p_estornar_recebimentos === true]
+    ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+  }
+
+  P('\n── Alterar compra já salva ──');
+  await page.evaluate(id => location.hash = '#compras/' + id, COM);
+  await page.waitForTimeout(1500);
+  await page.click('#edItens'); await page.waitForTimeout(900);
+  const ec = await page.evaluate(() => ({
+    forn: document.querySelector('#ec_forn')?.value,
+    data: document.querySelector('#ec_data')?.value,
+    doc: document.querySelector('#ec_doc')?.value,
+    crit: document.querySelector('#ec_crit')?.value,
+    dtpag: document.querySelector('#ec_dtpag')?.value }));
+  P('  ' + JSON.stringify(ec));
+  for (const [rot, ok2] of [
+    ['traz o fornecedor', ec.forn === 'AMERICAN'],
+    ['traz a data da compra', ec.data === '2026-07-01'],
+    ['traz o documento', ec.doc === 'NF 123'],
+    ['traz o critério de rateio', ec.crit === 'VALOR'],
+    ['traz a data de pagamento', ec.dtpag === '2026-08-20']
+  ]) { if (ok2) P('  ✓ ' + rot); else { P('  ✗ ' + rot); falhas++; } }
+  {
+    const ch = await page.evaluate(async () => {
+      let cap = null; const orig = window.rpc;
+      window.rpc = async (fn, args) => { cap = { fn, args }; throw new Error('parar'); };
+      document.querySelector('.modal-f [data-ok]').click();
+      await new Promise(r => setTimeout(r, 700));
+      window.rpc = orig; return cap;
+    });
+    if (ch?.fn === 'fn_editar_compra' && ch.args.p_dados?.numero_documento === 'NF 123')
+      P('  ✓ chama fn_editar_compra com o cabeçalho');
+    else { P('  ✗ RPC da compra incorreta: ' + JSON.stringify(ch).slice(0,200)); falhas++; }
+    await page.evaluate(() => document.querySelectorAll('.ov').forEach(o => o.remove()));
+  }
+
   P('\n── Contas a pagar: tela própria ──');
   const noMenu = await page.evaluate(() => !!document.querySelector('a[data-h="pagar"]'));
   if (noMenu) P('  ✓ item "Contas a Pagar" no menu lateral');

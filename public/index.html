@@ -865,7 +865,7 @@ async function atualizarBadges() {
 
 /* Carimbo de versão do arquivo. Trocado pelo scripts/build.sh a cada geração:
    é o que permite dizer, olhando a tela, se a cópia aberta é a mais nova. */
-const VERSAO = '2026.08.09.2247';
+const VERSAO = '2026.08.09.2302';
 
 async function iniciar() {
   const el = document.getElementById('sbVer');
@@ -1667,7 +1667,7 @@ async function fichaCompra(v, id) {
   <div class="page-head"><h1>Compra nº ${c.numero} <span class="tag ${badge[0]}">${badge[1]}</span>
     <small>${dBR(c.data_compra)} · ${esc(c.fornecedores?.nome || '—')}${c.numero_documento ? ' · doc ' + esc(c.numero_documento) : ''}</small></h1>
     <div class="acts"><a class="btn btn-s btn-sm" href="#compras">← Voltar</a>
-      ${c.status !== 'CANCELADO' ? '<button class="btn btn-p btn-sm" id="edItens">✎ Produtos da compra</button>' : ''}
+      ${c.status !== 'CANCELADO' ? '<button class="btn btn-p btn-sm" id="edItens">✎ Alterar compra</button>' : ''}
       ${c.status === 'CONFIRMADO' && !c.pago ? '<button class="btn btn-g btn-sm" id="pagBtn">✓ Marcar paga</button>' : ''}
       ${c.status === 'CONFIRMADO' ? '<button class="btn btn-d btn-sm" id="canBtn">Cancelar compra</button>' : ''}</div></div>
   ${c.status === 'CANCELADO' ? `<div class="alert bad"><span>⛔</span><div><b>Compra cancelada</b> em ${dBR(c.data_cancelamento)}.<br>Motivo: ${esc(c.motivo_cancelamento || '')}</div></div>` : ''}
@@ -1713,7 +1713,7 @@ async function fichaCompra(v, id) {
     <p style="margin-top:6px">${esc(c.observacoes)}</p></div></div>` : ''}`;
 
   $('#prBtn').onclick = () => imprimir(docCompra(c));
-  const eb = $('#edItens'); if (eb) eb.onclick = () => formItensCompra(c);
+  const eb = $('#edItens'); if (eb) eb.onclick = () => formEditarCompra(c);
   const pb = $('#pagBtn'); if (pb) pb.onclick = () => formPagarCompra({
     id:c.id, numero:c.numero, data_compra:c.data_compra, data_pagamento:c.data_pagamento,
     custo_total:c.custo_total, fornecedor_nome:c.fornecedores?.nome });
@@ -1732,17 +1732,32 @@ async function fichaCompra(v, id) {
 /* Incluir e excluir produto de uma compra, inclusive já confirmada.
    O banco desfaz a entrada de estoque, refaz o rateio de frete e taxa e dá
    entrada de novo — por isso o custo unitário de TODOS os itens muda. */
-function formItensCompra(c) {
+function formEditarCompra(c) {
   const itens = c.compra_itens.map(i => ({ produto_id:i.produto_id, nome:i.produtos?.nome,
     codigo:i.produtos?.codigo, qtd:String(N(i.quantidade)), vu:String(N(i.valor_unitario)) }));
   const confirmada = c.status === 'CONFIRMADO';
 
-  const m = modal({ titulo:`Produtos da compra nº ${c.numero}`, largura:'wide',
+  const m = modal({ titulo:`Alterar compra nº ${c.numero}`, largura:'wide',
     corpo:`${confirmada ? `<div class="alert warn"><span>⚠</span><div>Esta compra <b>já está confirmada</b>.
       Ao salvar, o sistema tira do estoque tudo o que esta compra tinha colocado, refaz o rateio de
       frete e taxa e dá entrada de novo — então o <b>custo unitário de todos os produtos da nota muda</b>.
       Se alguma unidade desta compra já foi vendida, a alteração é recusada.</div></div>`
       : '<div class="alert info"><span>ℹ</span><div>Compra em rascunho: pode mexer à vontade.</div></div>'}
+      <div class="grid-f f2" style="margin-bottom:14px">
+        <div style="position:relative"><label>Fornecedor</label>
+          <input class="inp" id="ec_forn" autocomplete="off" value="${esc(c.fornecedores?.nome || '')}">
+          <input type="hidden" id="ec_forn_id" value="${esc(c.fornecedor_id)}"></div>
+        <div><label>Data da compra</label>
+          <input class="inp" type="date" id="ec_data" value="${c.data_compra}" max="${hoje()}"></div>
+      </div>
+      <div class="grid-f f2" style="margin-bottom:16px">
+        <div><label>Nº do documento / nota</label>
+          <input class="inp" id="ec_doc" value="${esc(c.numero_documento || '')}"></div>
+        <div><label>Critério de rateio</label><select class="inp" id="ec_crit">
+          <option value="VALOR"${c.criterio_rateio === 'VALOR' ? ' selected' : ''}>Proporcional ao valor</option>
+          <option value="QUANTIDADE"${c.criterio_rateio === 'QUANTIDADE' ? ' selected' : ''}>Proporcional à quantidade</option>
+          </select></div>
+      </div>
       <div class="tw"><table class="itens-tb" id="ectb"><thead><tr>
         <th style="width:40%">Produto</th><th style="width:16%">Quantidade</th>
         <th style="width:20%">Valor unitário</th><th style="width:18%" class="r">Subtotal</th>
@@ -1753,14 +1768,23 @@ function formItensCompra(c) {
         <div><label>Taxa do cartão</label><input class="inp num" type="number" step="0.01" min="0" id="ec_taxa" value="${N(c.valor_taxa_cartao).toFixed(2)}"></div>
         <div><label>Outros custos</label><input class="inp num" type="number" step="0.01" min="0" id="ec_outros" value="${N(c.outros_custos).toFixed(2)}"></div>
       </div>
+      <div class="grid-f f3" style="margin-top:14px">
+        <div><label>Data do pagamento</label>
+          <input class="inp" type="date" id="ec_dtpag" value="${c.data_pagamento || ''}"></div>
+        <div><label>Forma de pagamento</label><select class="inp" id="ec_fpag">
+          <option value="">—</option>${selectOpts(S.formas, c.forma_pagamento_id)}</select></div>
+        <div style="display:flex;align-items:flex-end;padding-bottom:9px">
+          <label class="chk" style="margin:0"><input type="checkbox" id="ec_pago"${c.pago ? ' checked' : ''}> Já está paga</label></div>
+      </div>
       <div id="ec_resumo" style="margin-top:16px"></div>`,
     rodape:`<button class="btn btn-s" data-x>Cancelar</button>
-            <button class="btn btn-p" data-ok>Salvar produtos</button>` });
+            <button class="btn btn-p" data-ok>Salvar alterações</button>` });
 
   const resumo = () => {
     const sub = itens.reduce((a, i) => a + N(i.qtd) * N(i.vu), 0);
     const ace = N($('#ec_frete', m.body).value) + N($('#ec_taxa', m.body).value) + N($('#ec_outros', m.body).value);
-    const base = c.criterio_rateio === 'QUANTIDADE' ? itens.reduce((a, i) => a + N(i.qtd), 0) : sub;
+    const crit = $('#ec_crit', m.body)?.value || c.criterio_rateio;
+    const base = crit === 'QUANTIDADE' ? itens.reduce((a, i) => a + N(i.qtd), 0) : sub;
     $('#ec_resumo', m.body).innerHTML = `<div class="sumbox">
       <div class="sumrow"><span class="l">Produtos</span><span class="money">${BRL(sub)}</span></div>
       <div class="sumrow"><span class="l">Frete, taxa e outros</span><span class="money">${BRL(ace)}</span></div>
@@ -1768,12 +1792,12 @@ function formItensCompra(c) {
     </div>
     ${itens.length && base > 0 ? `<div class="tw" style="margin-top:12px"><table class="dt"><thead><tr>
       <th>Produto</th><th class="r">Rateio</th><th class="r">Custo unitário final</th></tr></thead><tbody>
-      ${itens.map(i => { const peso = c.criterio_rateio === 'QUANTIDADE' ? N(i.qtd) : N(i.qtd) * N(i.vu);
+      ${itens.map(i => { const peso = crit === 'QUANTIDADE' ? N(i.qtd) : N(i.qtd) * N(i.vu);
         const rat = ace * (peso / base);
         return `<tr><td>${esc(i.nome || '—')}</td><td class="r money" style="color:var(--amber)">${BRL(rat)}</td>
           <td class="r money"><b>${BRL(N(i.qtd) ? (N(i.qtd) * N(i.vu) + rat) / N(i.qtd) : 0)}</b></td></tr>`;
       }).join('')}</tbody></table></div>
-      <div class="hint">Prévia do rateio por ${c.criterio_rateio === 'QUANTIDADE' ? 'quantidade' : 'valor'}.
+      <div class="hint">Prévia do rateio por ${crit === 'QUANTIDADE' ? 'quantidade' : 'valor'}.
         O valor definitivo é calculado pelo banco ao salvar.</div>` : ''}`;
     $('[data-ok]', m.foot).disabled = !itens.length;
   };
@@ -1804,12 +1828,19 @@ function formItensCompra(c) {
 
   $('#ecAdd', m.body).onclick = () => { itens.push({ qtd:'', vu:'' }); render();
     setTimeout(() => { const l = $$('#ectb tbody .p-busca', m.body).pop(); if (l) l.focus(); }, 40); };
-  ['#ec_frete','#ec_taxa','#ec_outros'].forEach(x => $(x, m.body).addEventListener('input', resumo));
+  autocomplete($('#ec_forn', m.body), buscaFornecedor,
+    (fo) => { $('#ec_forn', m.body).value = fo.nome; $('#ec_forn_id', m.body).value = fo.id; }, fmtPessoa);
+  $('#ec_forn', m.body).addEventListener('input', () => {
+    if (!$('#ec_forn', m.body).value.trim()) $('#ec_forn_id', m.body).value = ''; });
+  ['#ec_frete','#ec_taxa','#ec_outros','#ec_crit'].forEach(x => $(x, m.body).addEventListener('input', resumo));
+  $('#ec_crit', m.body).addEventListener('change', resumo);
   $('[data-x]', m.foot).onclick = m.fechar;
 
   $('[data-ok]', m.foot).onclick = async (ev) => {
     const b = ev.target;
     if (!itens.length) return bad('Sem produtos', 'A compra precisa de ao menos um produto.');
+    if (!$('#ec_forn_id', m.body).value) return bad('Fornecedor não selecionado',
+      'Digite o nome e clique no fornecedor na lista que aparece.');
     for (const i of itens) {
       if (!i.produto_id) return bad('Produto não selecionado',
         'Em cada linha, digite o nome e clique no produto na lista que aparece.');
@@ -1817,15 +1848,23 @@ function formItensCompra(c) {
     }
     b.disabled = true; b.innerHTML = '<span class="spin"></span> Salvando…';
     try {
-      await rpc('fn_editar_itens_compra', { p_compra_id:c.id,
-        p_itens: itens.map(i => ({ produto_id:i.produto_id, quantidade:N(i.qtd), valor_unitario:N(i.vu) })),
-        p_valor_frete: N($('#ec_frete', m.body).value),
-        p_valor_taxa: N($('#ec_taxa', m.body).value),
-        p_outros_custos: N($('#ec_outros', m.body).value) });
-      m.fechar(); ok('Produtos atualizados', 'Estoque, rateio e custo médio recalculados.');
+      await rpc('fn_editar_compra', { p_compra_id:c.id,
+        p_dados: {
+          fornecedor_id: $('#ec_forn_id', m.body).value || c.fornecedor_id,
+          data_compra: $('#ec_data', m.body).value || c.data_compra,
+          numero_documento: $('#ec_doc', m.body).value.trim() || null,
+          criterio_rateio: $('#ec_crit', m.body).value,
+          valor_frete: N($('#ec_frete', m.body).value),
+          valor_taxa_cartao: N($('#ec_taxa', m.body).value),
+          outros_custos: N($('#ec_outros', m.body).value),
+          data_pagamento: $('#ec_dtpag', m.body).value || null,
+          pago: $('#ec_pago', m.body).checked,
+          forma_pagamento_id: $('#ec_fpag', m.body).value || null },
+        p_itens: itens.map(i => ({ produto_id:i.produto_id, quantidade:N(i.qtd), valor_unitario:N(i.vu) })) });
+      m.fechar(); ok('Compra alterada', 'Estoque, rateio e custo médio recalculados.');
       navegar();
     } catch (e) { bad('Não foi possível salvar', erroAmigavel(e));
-      b.disabled = false; b.textContent = 'Salvar produtos'; }
+      b.disabled = false; b.textContent = 'Salvar alterações'; }
   };
   render();
 }
@@ -3092,8 +3131,10 @@ function baixaMostruario(cfg, item, remessa) {
   };
 }
 /* ═══════════════ VENDAS (Prompt 10) ═══════════════ */
-ROTAS.vendas = async (v, id) => {
+ROTAS.vendas = async (v, id, acao) => {
   if (id === 'nova') return formVenda(v);
+  if (id && acao === 'editar') return formVenda(v,
+    await q(sb.from('vendas').select('*,clientes(id,nome),revendedores(id,nome),venda_itens(*,produtos(codigo,nome,custo_medio))').eq('id', id).single()));
   if (id) return fichaVenda(v, id);
   crumb('Vendas');
   const [vs, tits] = await Promise.all([
@@ -3167,12 +3208,24 @@ ROTAS.vendas = async (v, id) => {
   pintar();
 };
 
-async function formVenda(v) {
-  crumb('Vendas › Nova venda');
-  const itens = [];
+/* O mesmo formulário serve para lançar e para alterar. Alterar não é
+   "editar o registro": o banco desfaz o estoque, cancela os títulos e refaz
+   tudo pelo caminho normal — por isso o CMV é recalculado pelo custo médio
+   de hoje, e por isso recebimento precisa ser estornado antes. */
+async function formVenda(v, ed) {
+  crumb(ed ? `Vendas › nº ${ed.numero} › Alterar` : 'Vendas › Nova venda');
+  const itens = ed ? ed.venda_itens.map(i => ({ produto_id:i.produto_id, nome:i.produtos?.nome,
+    codigo:i.produtos?.codigo, qtd:String(N(i.quantidade)), preco:String(N(i.preco_unitario)),
+    custo:N(i.produtos?.custo_medio) })) : [];
   v.innerHTML = `
-  <div class="page-head"><h1>Nova venda<small>O sistema mostra o lucro antes de você confirmar</small></h1>
-    <div class="acts"><a class="btn btn-s btn-sm" href="#vendas">← Cancelar</a></div></div>
+  <div class="page-head"><h1>${ed ? `Alterar venda nº ${ed.numero}` : 'Nova venda'}
+    <small>${ed ? 'O estoque e as parcelas serão refeitos com os dados novos'
+                : 'O sistema mostra o lucro antes de você confirmar'}</small></h1>
+    <div class="acts"><a class="btn btn-s btn-sm" href="#vendas${ed ? '/' + ed.id : ''}">← Cancelar</a></div></div>
+  ${ed ? `<div class="alert warn"><span>⚠</span><div>Ao salvar, o sistema <b>devolve os produtos ao
+    estoque</b>, cancela as parcelas e refaz tudo com o que estiver aqui. O custo (CMV) é recalculado
+    pelo custo médio de hoje. Se já houve recebimento, ele precisa ser estornado — o sistema avisa
+    antes.</div></div>` : ''}
   <div style="display:grid;grid-template-columns:1fr 336px;gap:16px;align-items:start" class="g-cmp">
     <div>
       <div class="card"><div class="card-h"><h3>1 · Quem está comprando</h3></div><div class="card-b">
@@ -3234,7 +3287,7 @@ async function formVenda(v) {
         <div class="sumrow"><span class="l">Margem</span><span class="money" id="s_mg">0,0%</span></div>
       </div>
       <div id="pend" style="margin-top:14px"></div>
-      <button class="btn btn-p btn-block" id="confirmar" style="margin-top:12px">Confirmar venda</button>
+      <button class="btn btn-p btn-block" id="confirmar" style="margin-top:12px">${ed ? 'Salvar alterações' : 'Confirmar venda'}</button>
       <div class="hint" style="text-align:center;margin-top:8px">Baixa o estoque e gera as parcelas</div>
     </div></div></div>
   </div>
@@ -3450,7 +3503,8 @@ async function formVenda(v) {
         mensagem:`${abaixo.length} produto(s) estão sendo vendidos <b>abaixo do custo</b>.`,
         detalhes: abaixo.map(i => `${esc(i.nome)}: preço ${BRL(i.preco)} · custo ${BRL(i.custo)}`).join('<br>') })) return;
     }
-    b.disabled = true; b.innerHTML = '<span class="spin"></span> Confirmando…';
+    if (ed && !await confirmarEstornoVenda(ed.id, ed.numero)) return;
+    b.disabled = true; b.innerHTML = `<span class="spin"></span> ${ed ? 'Salvando…' : 'Confirmando…'}`;
     let vendaId = null;
     try {
       const dados = { tipo: tipoEl.value, data_venda: $('#v_data').value,
@@ -3461,6 +3515,22 @@ async function formVenda(v) {
         observacoes: $('#v_obs').value.trim() || null };
       if (tipoEl.value === 'CONSUMIDOR') dados.cliente_id = $('#v_comp_id').value || null;
       else dados.revendedor_id = $('#v_comp_id').value;
+
+      if (ed) {
+        /* Trocar de canal precisa limpar o outro lado, senão a venda ficaria
+           com cliente e revendedor ao mesmo tempo. */
+        dados.cliente_id = tipoEl.value === 'CONSUMIDOR' ? ($('#v_comp_id').value || null) : null;
+        dados.revendedor_id = tipoEl.value === 'REVENDEDOR' ? $('#v_comp_id').value : null;
+        delete dados.tipo;
+        await rpc('fn_editar_venda', { p_venda_id: ed.id, p_dados: dados,
+          p_itens: itens.map(i => ({ produto_id:i.produto_id, quantidade:N(i.qtd),
+            preco_unitario:N(i.preco), desconto_item:0 })),
+          p_estornar_recebimentos: true });
+        ok('Venda alterada', 'Estoque, parcelas e resultado refeitos.');
+        location.hash = `#vendas/${ed.id}`;
+        return;
+      }
+
       const vd = await q(sb.from('vendas').insert(dados).select().single());
       vendaId = vd.id;
       await q(sb.from('venda_itens').insert(itens.map(i => ({
@@ -3473,11 +3543,51 @@ async function formVenda(v) {
       location.hash = `#vendas/${vd.id}`;
     } catch (e) {
       if (vendaId) { try { await sb.from('vendas').delete().eq('id', vendaId); } catch (_) {} }
-      bad('Não foi possível confirmar', erroAmigavel(e));
-      b.disabled = false; b.textContent = 'Confirmar venda';
+      bad(ed ? 'Não foi possível alterar' : 'Não foi possível confirmar', erroAmigavel(e));
+      b.disabled = false; b.textContent = ed ? 'Salvar alterações' : 'Confirmar venda';
     }
   };
+  /* Preenche o formulário com a venda existente. Feito depois do render
+     porque os campos só existem a partir daí. */
+  if (ed) {
+    tipoEl.value = ed.tipo;
+    tipoEl.dispatchEvent(new Event('change'));
+    const comp = ed.clientes || ed.revendedores;
+    if (comp) { $('#v_comp').value = comp.nome; $('#v_comp_id').value = comp.id; }
+    $('#v_data').value = ed.data_venda;
+    $('#v_data').max = hoje() > ed.data_venda ? hoje() : ed.data_venda;
+    if (ed.forma_pagamento_id) $('#v_forma').value = ed.forma_pagamento_id;
+    $('#v_parc').value = String(ed.qtd_parcelas || 1);
+    $('#v_intv').value = String(ed.intervalo_parcelas_dias || 30);
+    $('#v_desc').value = N(ed.desconto_valor) ? N(ed.desconto_valor).toFixed(2) : '';
+    $('#v_obs').value = ed.observacoes || '';
+    if (ed.primeiro_vencimento) {
+      const el = $('#v_venc1'); el.value = ed.primeiro_vencimento; el.dataset.tocado = '1';
+    }
+  }
   atualizarParcelas(); render();
+}
+
+/* Antes de alterar, mostra o que será desfeito e pede confirmação do estorno.
+   Estorno de recebimento é dinheiro saindo do caixa: nunca silencioso. */
+async function confirmarEstornoVenda(vendaId, numero) {
+  const tits = await q(sb.from('titulos_receber').select('valor_recebido,situacao').eq('venda_id', vendaId).neq('situacao','CANCELADO'));
+  const recebido = tits.reduce((a, t) => a + N(t.valor_recebido), 0);
+  if (recebido <= 0) return true;
+  const recs = await q(sb.from('recebimento_alocacoes')
+    .select('valor,estornada,recebimentos(id,numero,data_recebimento,valor_total,estornado),titulos_receber!inner(venda_id)')
+    .eq('titulos_receber.venda_id', vendaId));
+  const lista = {};
+  recs.filter(a => !a.estornada && a.recebimentos && !a.recebimentos.estornado)
+      .forEach(a => lista[a.recebimentos.id] = a.recebimentos);
+  const rs = Object.values(lista);
+  return await confirmar({ titulo:'Estornar o recebimento para alterar?', textoBotao:'Estornar e alterar',
+    mensagem:`Esta venda já recebeu <b>${BRL(recebido)}</b>. Para alterar, o(s) recebimento(s) abaixo
+      serão <b>estornados por inteiro</b> — o valor sai do caixa e as parcelas voltam a ficar em aberto.`,
+    detalhes: rs.length
+      ? rs.map(r => `Recebimento nº ${r.numero} · ${dBR(r.data_recebimento)} · ${BRL(r.valor_total)}`).join('<br>')
+        + '<br><br>Se algum desses recebimentos pagou também outra venda, aquela outra volta a ficar em aberto.'
+      : 'O recebimento será estornado.' });
 }
 
 async function fichaVenda(v, id) {
@@ -3505,6 +3615,8 @@ async function fichaVenda(v, id) {
       ${esc(vd.formas_pagamento?.nome)}${vd.qtd_parcelas > 1 ? ` em ${vd.qtd_parcelas}×` : ' à vista'}</small></h1>
     <div class="acts"><a class="btn btn-s btn-sm" href="#vendas">← Voltar</a>
       <button class="btn btn-s btn-sm" id="recBtn">🧾 Recibo</button>
+      ${vd.status === 'CONFIRMADO' && !devs.length
+        ? `<a class="btn btn-s btn-sm" href="#vendas/${vd.id}/editar">✎ Alterar</a>` : ''}
       ${podeDevolver && vd.venda_itens.some(i => N(i.quantidade) - N(i.qtd_devolvida) > 0)
         ? '<button class="btn btn-s btn-sm" id="devBtn">↩ Devolver produto</button>' : ''}
       ${comp?.whatsapp ? `<a class="btn btn-g btn-sm" target="_blank" href="https://wa.me/55${comp.whatsapp}">WhatsApp</a>` : ''}

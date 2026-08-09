@@ -1,6 +1,8 @@
 /* ═══════════════ VENDAS (Prompt 10) ═══════════════ */
-ROTAS.vendas = async (v, id) => {
+ROTAS.vendas = async (v, id, acao) => {
   if (id === 'nova') return formVenda(v);
+  if (id && acao === 'editar') return formVenda(v,
+    await q(sb.from('vendas').select('*,clientes(id,nome),revendedores(id,nome),venda_itens(*,produtos(codigo,nome,custo_medio))').eq('id', id).single()));
   if (id) return fichaVenda(v, id);
   crumb('Vendas');
   const [vs, tits] = await Promise.all([
@@ -74,12 +76,24 @@ ROTAS.vendas = async (v, id) => {
   pintar();
 };
 
-async function formVenda(v) {
-  crumb('Vendas › Nova venda');
-  const itens = [];
+/* O mesmo formulário serve para lançar e para alterar. Alterar não é
+   "editar o registro": o banco desfaz o estoque, cancela os títulos e refaz
+   tudo pelo caminho normal — por isso o CMV é recalculado pelo custo médio
+   de hoje, e por isso recebimento precisa ser estornado antes. */
+async function formVenda(v, ed) {
+  crumb(ed ? `Vendas › nº ${ed.numero} › Alterar` : 'Vendas › Nova venda');
+  const itens = ed ? ed.venda_itens.map(i => ({ produto_id:i.produto_id, nome:i.produtos?.nome,
+    codigo:i.produtos?.codigo, qtd:String(N(i.quantidade)), preco:String(N(i.preco_unitario)),
+    custo:N(i.produtos?.custo_medio) })) : [];
   v.innerHTML = `
-  <div class="page-head"><h1>Nova venda<small>O sistema mostra o lucro antes de você confirmar</small></h1>
-    <div class="acts"><a class="btn btn-s btn-sm" href="#vendas">← Cancelar</a></div></div>
+  <div class="page-head"><h1>${ed ? `Alterar venda nº ${ed.numero}` : 'Nova venda'}
+    <small>${ed ? 'O estoque e as parcelas serão refeitos com os dados novos'
+                : 'O sistema mostra o lucro antes de você confirmar'}</small></h1>
+    <div class="acts"><a class="btn btn-s btn-sm" href="#vendas${ed ? '/' + ed.id : ''}">← Cancelar</a></div></div>
+  ${ed ? `<div class="alert warn"><span>⚠</span><div>Ao salvar, o sistema <b>devolve os produtos ao
+    estoque</b>, cancela as parcelas e refaz tudo com o que estiver aqui. O custo (CMV) é recalculado
+    pelo custo médio de hoje. Se já houve recebimento, ele precisa ser estornado — o sistema avisa
+    antes.</div></div>` : ''}
   <div style="display:grid;grid-template-columns:1fr 336px;gap:16px;align-items:start" class="g-cmp">
     <div>
       <div class="card"><div class="card-h"><h3>1 · Quem está comprando</h3></div><div class="card-b">
@@ -141,7 +155,7 @@ async function formVenda(v) {
         <div class="sumrow"><span class="l">Margem</span><span class="money" id="s_mg">0,0%</span></div>
       </div>
       <div id="pend" style="margin-top:14px"></div>
-      <button class="btn btn-p btn-block" id="confirmar" style="margin-top:12px">Confirmar venda</button>
+      <button class="btn btn-p btn-block" id="confirmar" style="margin-top:12px">${ed ? 'Salvar alterações' : 'Confirmar venda'}</button>
       <div class="hint" style="text-align:center;margin-top:8px">Baixa o estoque e gera as parcelas</div>
     </div></div></div>
   </div>
@@ -357,7 +371,8 @@ async function formVenda(v) {
         mensagem:`${abaixo.length} produto(s) estão sendo vendidos <b>abaixo do custo</b>.`,
         detalhes: abaixo.map(i => `${esc(i.nome)}: preço ${BRL(i.preco)} · custo ${BRL(i.custo)}`).join('<br>') })) return;
     }
-    b.disabled = true; b.innerHTML = '<span class="spin"></span> Confirmando…';
+    if (ed && !await confirmarEstornoVenda(ed.id, ed.numero)) return;
+    b.disabled = true; b.innerHTML = `<span class="spin"></span> ${ed ? 'Salvando…' : 'Confirmando…'}`;
     let vendaId = null;
     try {
       const dados = { tipo: tipoEl.value, data_venda: $('#v_data').value,
@@ -368,6 +383,22 @@ async function formVenda(v) {
         observacoes: $('#v_obs').value.trim() || null };
       if (tipoEl.value === 'CONSUMIDOR') dados.cliente_id = $('#v_comp_id').value || null;
       else dados.revendedor_id = $('#v_comp_id').value;
+
+      if (ed) {
+        /* Trocar de canal precisa limpar o outro lado, senão a venda ficaria
+           com cliente e revendedor ao mesmo tempo. */
+        dados.cliente_id = tipoEl.value === 'CONSUMIDOR' ? ($('#v_comp_id').value || null) : null;
+        dados.revendedor_id = tipoEl.value === 'REVENDEDOR' ? $('#v_comp_id').value : null;
+        delete dados.tipo;
+        await rpc('fn_editar_venda', { p_venda_id: ed.id, p_dados: dados,
+          p_itens: itens.map(i => ({ produto_id:i.produto_id, quantidade:N(i.qtd),
+            preco_unitario:N(i.preco), desconto_item:0 })),
+          p_estornar_recebimentos: true });
+        ok('Venda alterada', 'Estoque, parcelas e resultado refeitos.');
+        location.hash = `#vendas/${ed.id}`;
+        return;
+      }
+
       const vd = await q(sb.from('vendas').insert(dados).select().single());
       vendaId = vd.id;
       await q(sb.from('venda_itens').insert(itens.map(i => ({
@@ -380,11 +411,51 @@ async function formVenda(v) {
       location.hash = `#vendas/${vd.id}`;
     } catch (e) {
       if (vendaId) { try { await sb.from('vendas').delete().eq('id', vendaId); } catch (_) {} }
-      bad('Não foi possível confirmar', erroAmigavel(e));
-      b.disabled = false; b.textContent = 'Confirmar venda';
+      bad(ed ? 'Não foi possível alterar' : 'Não foi possível confirmar', erroAmigavel(e));
+      b.disabled = false; b.textContent = ed ? 'Salvar alterações' : 'Confirmar venda';
     }
   };
+  /* Preenche o formulário com a venda existente. Feito depois do render
+     porque os campos só existem a partir daí. */
+  if (ed) {
+    tipoEl.value = ed.tipo;
+    tipoEl.dispatchEvent(new Event('change'));
+    const comp = ed.clientes || ed.revendedores;
+    if (comp) { $('#v_comp').value = comp.nome; $('#v_comp_id').value = comp.id; }
+    $('#v_data').value = ed.data_venda;
+    $('#v_data').max = hoje() > ed.data_venda ? hoje() : ed.data_venda;
+    if (ed.forma_pagamento_id) $('#v_forma').value = ed.forma_pagamento_id;
+    $('#v_parc').value = String(ed.qtd_parcelas || 1);
+    $('#v_intv').value = String(ed.intervalo_parcelas_dias || 30);
+    $('#v_desc').value = N(ed.desconto_valor) ? N(ed.desconto_valor).toFixed(2) : '';
+    $('#v_obs').value = ed.observacoes || '';
+    if (ed.primeiro_vencimento) {
+      const el = $('#v_venc1'); el.value = ed.primeiro_vencimento; el.dataset.tocado = '1';
+    }
+  }
   atualizarParcelas(); render();
+}
+
+/* Antes de alterar, mostra o que será desfeito e pede confirmação do estorno.
+   Estorno de recebimento é dinheiro saindo do caixa: nunca silencioso. */
+async function confirmarEstornoVenda(vendaId, numero) {
+  const tits = await q(sb.from('titulos_receber').select('valor_recebido,situacao').eq('venda_id', vendaId).neq('situacao','CANCELADO'));
+  const recebido = tits.reduce((a, t) => a + N(t.valor_recebido), 0);
+  if (recebido <= 0) return true;
+  const recs = await q(sb.from('recebimento_alocacoes')
+    .select('valor,estornada,recebimentos(id,numero,data_recebimento,valor_total,estornado),titulos_receber!inner(venda_id)')
+    .eq('titulos_receber.venda_id', vendaId));
+  const lista = {};
+  recs.filter(a => !a.estornada && a.recebimentos && !a.recebimentos.estornado)
+      .forEach(a => lista[a.recebimentos.id] = a.recebimentos);
+  const rs = Object.values(lista);
+  return await confirmar({ titulo:'Estornar o recebimento para alterar?', textoBotao:'Estornar e alterar',
+    mensagem:`Esta venda já recebeu <b>${BRL(recebido)}</b>. Para alterar, o(s) recebimento(s) abaixo
+      serão <b>estornados por inteiro</b> — o valor sai do caixa e as parcelas voltam a ficar em aberto.`,
+    detalhes: rs.length
+      ? rs.map(r => `Recebimento nº ${r.numero} · ${dBR(r.data_recebimento)} · ${BRL(r.valor_total)}`).join('<br>')
+        + '<br><br>Se algum desses recebimentos pagou também outra venda, aquela outra volta a ficar em aberto.'
+      : 'O recebimento será estornado.' });
 }
 
 async function fichaVenda(v, id) {
@@ -412,6 +483,8 @@ async function fichaVenda(v, id) {
       ${esc(vd.formas_pagamento?.nome)}${vd.qtd_parcelas > 1 ? ` em ${vd.qtd_parcelas}×` : ' à vista'}</small></h1>
     <div class="acts"><a class="btn btn-s btn-sm" href="#vendas">← Voltar</a>
       <button class="btn btn-s btn-sm" id="recBtn">🧾 Recibo</button>
+      ${vd.status === 'CONFIRMADO' && !devs.length
+        ? `<a class="btn btn-s btn-sm" href="#vendas/${vd.id}/editar">✎ Alterar</a>` : ''}
       ${podeDevolver && vd.venda_itens.some(i => N(i.quantidade) - N(i.qtd_devolvida) > 0)
         ? '<button class="btn btn-s btn-sm" id="devBtn">↩ Devolver produto</button>' : ''}
       ${comp?.whatsapp ? `<a class="btn btn-g btn-sm" target="_blank" href="https://wa.me/55${comp.whatsapp}">WhatsApp</a>` : ''}
